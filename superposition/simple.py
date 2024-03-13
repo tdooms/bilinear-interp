@@ -7,7 +7,7 @@ import torch
 from torch import nn
 from einops import *
 import plotly.express as px
-
+import itertools
 from model import *
 from plotting import *
 
@@ -80,3 +80,24 @@ matrix[..., 3] = weights[..., 1, 1] + biases[:, 1]
 
 params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='auto')
 px.imshow(matrix, facet_col=0, facet_col_wrap=5, **params)
+
+# %%
+
+params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='auto')
+
+p_w = einsum(model.p, model.w, "i hid in, i hid out -> i in out")
+p_v = einsum(model.p, model.v, "i hid in, i hid out -> i in out")
+
+# p_i = einsum(p_w, p_v, "i in1 out, i in2 out -> i out in1 in2")
+# p_f = rearrange(p_i, "i out in1 in2 -> i out (in1 in2)")
+
+# display(px.imshow(p_f[0].detach().cpu(), **params))
+# display(px.imshow(p_f[-1].detach().cpu(), **params))
+
+combinations = itertools.combinations_with_replacement(range(cfg.n_features), 2)
+pairs = torch.tensor(list(combinations), device=cfg.device)
+
+features = 0.5 * p_w[..., pairs[:, 0]] * p_v[..., pairs[:, 1]] + 0.5 * p_w[..., pairs[:, 1]] * p_v[..., pairs[:, 0]]
+
+x = [f"{i}-{j}" for i, j in pairs]
+px.imshow(features[0].detach().cpu(), **params, x=x, labels=dict(x="Interaction", y="Output"))

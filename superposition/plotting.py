@@ -76,6 +76,7 @@ def _generate_basis_predictions(model: Wrapper):
     
     return model.forward(bases).detach().cpu()
 
+
 def plot_basis_predictions(model: Wrapper):
     params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='auto')
     
@@ -100,7 +101,7 @@ def plot_feature_capacity(model: Wrapper):
     fig.update_layout(showlegend=False, height=1000, title_text="Feature Capacity", title_x=0.5)
     return fig
     
-    
+
 # TODO: adding quadratic trend lines would be cool
 def plot_nd_correlation(
     y: Float[Tensor, "batch instances features"], 

@@ -16,7 +16,7 @@ class ConfigBase:
     
     n_epochs: int = 1_000
     batch_size: int = 512
-    lr: float = 0.005
+    lr: float = 0.01
     
     device: str = "cuda:0"
     scale: float = 1.0  # The scale of the random features - default [0.0; 1.0]
