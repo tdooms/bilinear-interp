@@ -13,40 +13,43 @@ from model import *
 from plotting import *
 
 # %%
-def generate_correlated_features(cfg, probability, n_correlated_pairs) -> Float[Tensor, "batch_size instances features"]:
+def generate_correlated_features(cfg, probability) -> Float[Tensor, "batch_size instances features"]:
     '''
     Generates a batch of correlated features.
     Each output[i, j, 2k] and output[i, j, 2k + 1] are correlated, i.e. one is present iff the other is present.
     '''
-    feat = torch.rand((cfg.batch_size, cfg.n_instances, 2 * n_correlated_pairs), device=cfg.device)
-    feat_set_seeds = torch.rand((cfg.batch_size, cfg.n_instances, n_correlated_pairs), device=cfg.device)
+    feat = torch.rand((cfg.batch_size, cfg.n_instances, 2 * cfg.n_correlated_pairs), device=cfg.device)
+    feat_set_seeds = torch.rand((cfg.batch_size, cfg.n_instances, cfg.n_correlated_pairs), device=cfg.device)
     feat_set_is_present = feat_set_seeds <= probability[:, [0]]
     feat_is_present = repeat(feat_set_is_present, "batch instances features -> batch instances (features pair)", pair=2)
     return torch.where(feat_is_present, feat, 0.0)
 
 
-# def generate_anticorrelated_features(cfg, n_anticorrelated_pairs) -> Float[Tensor, "batch_size instances features"]:
-#     '''
-#     Generates a batch of anti-correlated features.
-#     Each output[i, j, 2k] and output[i, j, 2k + 1] are anti-correlated, i.e. one is present iff the other is absent.
-#     '''
-#     feat = t.rand((batch_size, self.cfg.n_instances, 2 * n_anticorrelated_pairs), device=self.W.device)
-#     feat_set_seeds = t.rand((batch_size, self.cfg.n_instances, n_anticorrelated_pairs), device=self.W.device)
-#     first_feat_seeds = t.rand((batch_size, self.cfg.n_instances, n_anticorrelated_pairs), device=self.W.device)
-#     feat_set_is_present = feat_set_seeds <= 2 * self.feature_probability[:, [0]]
-#     first_feat_is_present = first_feat_seeds <= 0.5
-#     first_feats = t.where(feat_set_is_present & first_feat_is_present, feat[:, :, :n_anticorrelated_pairs], 0.0)
-#     second_feats = t.where(feat_set_is_present & (~first_feat_is_present), feat[:, :, n_anticorrelated_pairs:], 0.0)
-#     return einops.rearrange(t.concat([first_feats, second_feats], dim=-1), "batch instances (pair features) -> batch instances (features pair)", pair=2)
+def generate_anti_correlated_features(cfg, probability) -> Float[Tensor, "batch_size instances features"]:
+    '''
+    Generates a batch of anti-correlated features.
+    Each output[i, j, 2k] and output[i, j, 2k + 1] are anti-correlated, i.e. one is present iff the other is absent.
+    '''
+    feat = torch.rand((cfg.batch_size, cfg.n_instances, 2 * cfg.n_anti_correlated_pairs), device=cfg.device)
+    feat_set_seeds = torch.rand((cfg.batch_size, cfg.n_instances, cfg.n_anti_correlated_pairs), device=cfg.device)
+    first_feat_seeds = torch.rand((cfg.batch_size, cfg.n_instances, cfg.n_anti_correlated_pairs), device=cfg.device)
+    feat_set_is_present = feat_set_seeds <= 2 * probability[:, [0]]
+    first_feat_is_present = first_feat_seeds <= 0.5
+    first_feats = torch.where(feat_set_is_present & first_feat_is_present, feat[:, :, :cfg.n_anti_correlated_pairs], 0.0)
+    second_feats = torch.where(feat_set_is_present & (~first_feat_is_present), feat[:, :, cfg.n_anti_correlated_pairs:], 0.0)
+    return rearrange(torch.concat([first_feats, second_feats], dim=-1), "batch instances (pair features) -> batch instances (features pair)", pair=2)
 
 
 @dataclass
-class Config(ConfigBase):
-    pass
+class Config(SPConfig):
+    n_correlated_pairs: Optional[int] = None
+    n_anti_correlated_pairs: Optional[int] = None
 
-class Model(nn.Module):
+class Model(SPModel):
     def __init__(self, cfg: Config) -> None:
-        super().__init__()
+        super().__init__(cfg)
+        
+        assert cfg.n_correlated_pairs is None or cfg.n_anti_correlated_pairs is None, "Cannot have both correlated and anti-correlated pairs"
         self.cfg = cfg
         
         p = torch.empty((cfg.n_instances, cfg.n_hidden, cfg.n_features), device=cfg.device)
@@ -57,7 +60,15 @@ class Model(nn.Module):
         
         v = torch.empty((cfg.n_instances, cfg.n_hidden + 1, cfg.n_features), device=cfg.device)
         self.v = nn.Parameter(nn.init.xavier_normal_(v))
-        
+    
+    def generate_batch(self):
+        if self.cfg.n_correlated_pairs:
+            return generate_correlated_features(self.cfg, self.probability)
+        elif self.cfg.n_anti_correlated_pairs:
+            return generate_anti_correlated_features(self.cfg, self.probability)
+        else:
+            return super().generate_batch()
+    
     def forward(self, x):
         ones =  torch.ones(x.size(0), cfg.n_instances, 1, device=cfg.device)
         
@@ -69,15 +80,20 @@ class Model(nn.Module):
         
         return out2 * out3
    
-cfg = Config(n_hidden=5, n_features=8, n_instances=8, n_epochs=2_000)
-wrapper = Wrapper(Model, cfg)
+cfg = Config(n_hidden=4, n_features=12, n_instances=12, n_anti_correlated_pairs=6, n_correlated_pairs=None, seed=None)
+model = Model(cfg)
 
-torch.manual_seed(0)
-model = wrapper.model
-wrapper.train()
+model.train()
+
+# %%
+generate_correlated_features(cfg, model.probability).shape
+# %%
+
+plot_basis_predictions(model)
+# %%
+
+plot_overlapped_composition(model.p, model.w, model.v, model.sparsity(), zmax=1, height=600)
 
 # %%
 
-px.imshow(generate_correlated_features(cfg, wrapper.probability, 4)[0].detach().cpu())
-
-# %%
+plot_instances_in_nd(model.p, model.sparsity(), "p", height=800)

@@ -9,30 +9,33 @@ import itertools
 from torch import Tensor, nn
 from typing import List, Optional
 from jaxtyping import Float
-from model import Wrapper
 
+COLOR = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0)
+COLS = 4
 
 def _set_sparsities(fig, sparsity, amt):
     if sparsity is None:
         titles = [f"Instance {i}" for i in range(amt)]
     else:
         titles = [f"{val:.1%} sparsity" for val in sparsity]
-    _set_annotations(fig, titles)
-    
+    return _set_annotations(fig, titles)
+
     
 def _set_annotations(fig, titles):
     for annotation in fig.layout.annotations:
         facet = int(annotation.text.split("=")[-1])
         annotation.update(text=f"{titles[facet]}")
+    return fig
 
-        
+
 # TODO: ideally, the colors and general layout could be a bit nicer
 def plot_instances_in_2d(
     instances: Float[Tensor, "instances features hidden"], 
     sparsity: Optional[Float[Tensor, "x"]] = None, 
     title: str = "2D Instances", 
     domain: float = 1.5,
-    cols: int = 5
+    cols: int = COLS,
+    **kwargs
 ):
     assert instances.size(-1) == 2, "Only 2D instances are supported"
     instances = instances.detach().cpu()
@@ -40,7 +43,7 @@ def plot_instances_in_2d(
     rows = math.ceil(instances.size(0) / cols)
     titles = [f"{val:.1%} sparsity" for val in sparsity] if sparsity is not None else None
     
-    fig = make_subplots(rows=rows, cols=cols, subplot_titles=titles)
+    fig = make_subplots(rows=rows, cols=cols, subplot_titles=titles, **kwargs)
 
     for idx, features in enumerate(instances):
         row = (idx // cols) + 1
@@ -64,26 +67,21 @@ def plot_instances_in_nd(
     instances: Float[Tensor, "instances hidden features"],
     sparsity: Optional[Float[Tensor, "x"]] = None,
     title: str = "ND Instances",
-    cols: int = 5
+    cols: int = COLS,
+    **kwargs
 ): 
+    """ This corresponds to the cosine similarity between the hidden dimensions. """
     instances = instances.detach().cpu()
-    titles = [f"{val:.1%} sparsity" for val in sparsity] if sparsity is not None else ''*instances.size(0)
     
-    qt_q = einops.einsum(instances, instances, "i h f1, i h f2 -> i f1 f2")
-    params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='equal')
+    normalized = instances / torch.linalg.norm(instances, dim=-2)[:, None, :]
+    gram = einops.einsum(normalized, normalized, "i h f1, i h f2 -> i f1 f2")
     
-    fig = px.imshow(qt_q, facet_col=0, facet_col_wrap=cols, title=title, **params)
+    fig = px.imshow(gram, facet_col=0, facet_col_wrap=cols, title=title, aspect='equal', **COLOR, **kwargs)
     fig.update_layout(title_x=0.5)
+    return _set_sparsities(fig, sparsity, amt=instances.size(0))    
     
-    for idx, label in enumerate(titles):
-        # Plotly is so cursed sometimes: annotations start at the bottom left
-        # This fix probably only works if rows <= 2
-        fig.layout.annotations[(idx+cols) % len(titles)]['text'] = label
-        
-    return fig
 
-
-def _generate_basis_predictions(model: Wrapper):
+def _generate_basis_predictions(model: nn.Module):
     n_features, n_instances = model.cfg.n_features, model.cfg.n_instances
     
     bases = nn.functional.one_hot(torch.arange(n_features), num_classes=n_features)
@@ -93,15 +91,16 @@ def _generate_basis_predictions(model: Wrapper):
     return model.forward(bases).detach().cpu()
 
 
-def plot_basis_predictions(model: Wrapper):
-    params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='auto')
-    
+def plot_basis_predictions(model: nn.Module, **kwargs):
     predictions = _generate_basis_predictions(model)
-    return px.imshow(predictions, facet_col=0, **params, labels=dict(x="Feature", y="Instance"))
+    labels=dict(y="Instance")
+    
+    fig = px.imshow(predictions, facet_col=0, labels=labels,  aspect='auto', **COLOR, **kwargs)
+    return _set_annotations(fig, [f'Feature {i}' for i in range(predictions.size(1))])
 
 
 # TODO: this is a dumb way to do this, it's probably also wrong
-def plot_feature_capacity(model: Wrapper):
+def plot_feature_capacity(model: nn.Module):
     predictions = _generate_basis_predictions(model)
     n_instances, n_features = model.cfg.n_instances, model.cfg.n_features
     
@@ -122,7 +121,7 @@ def plot_feature_capacity(model: Wrapper):
 def plot_nd_correlation(
     y: Float[Tensor, "batch instances features"], 
     y_hat: Float[Tensor, "batch instances features"], 
-    cols=5
+    cols: int = COLS
 ):
     y = y.detach().cpu()
     y_hat = y_hat.detach().cpu()
@@ -175,7 +174,8 @@ def plot_pairwise_feature_vectors(
     w: Float[Tensor, "instances hidden+1 features"],
     v: Float[Tensor, "instances hidden+1 features"],
     sparsity: Optional[Float[Tensor, "x"]],
-    symmetric: bool = False
+    symmetric: bool = False,
+    **kwargs
 ):
     """
     Plots the matrix of pairwise feature vectors. Each column represents a feature pair.
@@ -184,14 +184,11 @@ def plot_pairwise_feature_vectors(
 
     reshaped = einops.rearrange(features, "i pair feat -> i feat pair").detach().cpu()
     labels=dict(x="Pair", y="Output")
-    params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='equal')
-    
     x = [f"{i}-{j}" for i, j in pairs]
 
-    fig = px.imshow(reshaped, **params, x=x, labels=labels, facet_col=0, facet_col_wrap=1, height=1400)
+    fig = px.imshow(reshaped, x=x, labels=labels, facet_col=0, facet_col_wrap=1, aspect='equal', **COLOR, **kwargs)
     fig.update_layout(title_x=0.5, title="Pairwise Feature Vectors")
-    _set_sparsities(fig, sparsity, amt=w.size(0))
-    return fig
+    return _set_sparsities(fig, sparsity, amt=w.size(0))
 
 
 def plot_feature_composition(
@@ -199,8 +196,9 @@ def plot_feature_composition(
     w: Float[Tensor, "instances hidden+1 features"],
     v: Float[Tensor, "instances hidden+1 features"],
     sparsity: Optional[Float[Tensor, "x"]] = None,
+    title: str = "Output feature contributions",
     instance: int = -1,
-    cols: int = 4,
+    cols: int = COLS,
     **kwargs
 ):
     """
@@ -208,14 +206,11 @@ def plot_feature_composition(
     Intuitively, this corresponds to taking the n-th element from each of the feature pair vectors and plotting it in a square.
     """
     features, _ = make_pairwise_features(proj, w, v, True)
-    
     reshaped = einops.rearrange(features, "i (in1 in2) out -> i out in1 in2", in1=w.size(2)+1).detach().cpu()
-    params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='equal')
     
-    fig = px.imshow(reshaped[instance], **kwargs, **params, facet_col=0, facet_col_wrap=cols)
-    fig.update_layout(title_x=0.5, title="Output feature contributions")
-    _set_sparsities(fig, sparsity, amt=w.size(0))
-    return fig
+    fig = px.imshow(reshaped[instance], title=title, facet_col=0, facet_col_wrap=cols, aspect='equal', **COLOR, **kwargs)
+    fig.update_layout(title_x=0.5)
+    return _set_sparsities(fig, sparsity, amt=w.size(0))
 
 
 def plot_overlapped_composition(
@@ -224,7 +219,8 @@ def plot_overlapped_composition(
     v: Float[Tensor, "instances hidden+1 features"],
     sparsity: Optional[Float[Tensor, "x"]] = None,
     instance: Optional[int] = None,
-    cols: int = 4,
+    title: str = "Overlapped output feature contributions",
+    cols: int = COLS,
     **kwargs
 ):
     """
@@ -236,15 +232,12 @@ def plot_overlapped_composition(
     features, _ = make_pairwise_features(proj, w, v, True)
     
     reshaped = einops.rearrange(features, "i (in1 in2) out -> i out in1 in2", in1=w.size(2)+1).detach().cpu()
-    reshaped = einops.reduce(reshaped, "i out in1 in2 -> i in1 in2", "sum")
-    
-    params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='equal')
+    reduced = einops.reduce(reshaped, "i out in1 in2 -> i in1 in2", "sum")
     
     if instance is not None:
-        fig = px.imshow(reshaped[instance], **kwargs, **params)
+        fig = px.imshow(reduced[instance], title=title, aspect='equal', **COLOR, **kwargs)
     else:
-        fig = px.imshow(reshaped, **kwargs, **params, facet_col=0, facet_col_wrap=cols)
+        fig = px.imshow(reduced, title=title, facet_col=0, facet_col_wrap=cols, aspect='equal', **COLOR, **kwargs)
 
-    fig.update_layout(title_x=0.5, title="Overlapped output feature contributions")
-    _set_sparsities(fig, sparsity, amt=w.size(0))
-    return fig
+    fig.update_layout(title_x=0.5)
+    return _set_sparsities(fig, sparsity, amt=w.size(0))

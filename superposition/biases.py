@@ -14,12 +14,12 @@ from plotting import *
 
 # %%
 @dataclass
-class Config(ConfigBase):
+class Config(SPConfig):
     pass
 
-class Model(nn.Module):
+class Model(SPModel):
     def __init__(self, cfg: Config) -> None:
-        super().__init__()
+        super().__init__(cfg)
         self.cfg = cfg
         
         p = torch.empty((cfg.n_instances, cfg.n_hidden, cfg.n_features), device=cfg.device)
@@ -42,47 +42,35 @@ class Model(nn.Module):
         
         return out2 * out3
    
-cfg = Config(n_hidden=5, n_features=8, n_instances=8, n_epochs=2_000)
-wrapper = Wrapper(Model, cfg)
+cfg = Config(n_hidden=5, n_features=8, n_epochs=2_000)
+model = Model(cfg)
 
-torch.manual_seed(0)
-model = wrapper.model
-wrapper.train()
+model.train()
 
 # %%
 
-values = wrapper.generate_batch()
+values = model.generate_batch()
 plot_nd_correlation(values, model(values))
 
 # %%
-plot_instances_in_2d(model.p.permute(0, 2, 1).detach().cpu(), cols=5, title="p")
+plot_instances_in_2d(model.p.permute(0, 2, 1), cols=5, title="p")
 # %%
-plot_instances_in_nd(model.p.detach().cpu(), cols=5, title="p")
+plot_instances_in_nd(model.p, cols=5, title="p")
 # %%
-sparsity = wrapper.sparsity()
-display(plot_instances_in_nd(model.w.detach().cpu(), sparsity, cols=5, title="w"))
-display(plot_instances_in_nd(model.v.detach().cpu(), sparsity, cols=5, title="v"))
+sparsity = model.sparsity()
+display(plot_instances_in_nd(model.w, sparsity, cols=5, title="w"))
+display(plot_instances_in_nd(model.v, sparsity, cols=5, title="v"))
 
 # %%
-plot_basis_predictions(wrapper)
-
+plot_basis_predictions(model)
 # %%
-
-plot_pairwise_feature_vectors(model.p, model.w, model.v, wrapper.sparsity())
-
+plot_pairwise_feature_vectors(model.p, model.w, model.v, model.sparsity())
 # %%
-px.imshow(features.pow(2).sum(-2).detach().cpu())
-
-# %%
-
 plot_feature_composition(model.p, model.w, model.v, instance=6)
-
 # %%
 plot_overlapped_composition(model.p, model.w, model.v, zmax=1.2, instance=None)
 # %%
-
 vecs, _ = make_pairwise_features(model.p, model.w, model.v, symmetric=True)
-print(vecs)
 
 # px.imshow(vecs[5].T.detach().cpu(), color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='auto', labels=dict(y="Output", x="Pairs"))
 

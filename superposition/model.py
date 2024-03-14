@@ -4,34 +4,34 @@ import einops
 import plotly.express as px
 from tqdm import tqdm
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
-class ConfigBase:
+class SPConfig:
     """A configuration class for superposition models."""
     
-    n_instances: int = 10
+    n_instances: int = 8
     n_features: int = 5
     n_hidden: int = 2
     
-    n_epochs: int = 1_000
+    n_epochs: int = 2_000
     batch_size: int = 512
     lr: float = 0.01
+    seed: Optional[int] = 0
     
     device: str = "cuda:0"
-    scale: float = 1.0  # The scale of the random features - default [0.0; 1.0]
+    feature_scale: float = 1.0
     
     importance: str = 'constant'
     probability: str = 'inverted'
 
 
-class Wrapper(nn.Module):
-    """Wraps a model and adds helper functions for studying superposition."""
+class SPModel(nn.Module):
+    """The base model for studying superposition. This provides most default behavior for toy feature reconstruction models."""
     
-    def __init__(self, model_fn, cfg):
+    def __init__(self, cfg):
         super().__init__()
-        
-        self.model = model_fn(cfg).to(cfg.device)
         self.cfg = cfg
         
         if cfg.importance == 'decay':
@@ -50,9 +50,6 @@ class Wrapper(nn.Module):
         
         self.importance = importance.unsqueeze(0)
         self.probability = probability.unsqueeze(1)
-        
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfg.lr)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, cfg.n_epochs)
 
     
     def criterion(self, y_hat, y):
@@ -60,18 +57,24 @@ class Wrapper(nn.Module):
         return einops.reduce(error, 'b i f -> i', 'mean').sum()
 
     def forward(self, x):
-        return self.model(x)
+        raise NotImplementedError
 
     def sparsity(self):
         return 1 - self.probability.squeeze(1)
         
     def generate_batch(self):
         dims = (self.cfg.batch_size, self.cfg.n_instances, self.cfg.n_features)
-        features = torch.rand(dims, device=self.cfg.device) * self.cfg.scale
+        features = torch.rand(dims, device=self.cfg.device) * self.cfg.feature_scale
         mask = torch.rand(dims, device=self.cfg.device) < self.probability
         return features * mask
 
     def train(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.cfg.lr)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, self.cfg.n_epochs)
+        
+        if self.cfg.seed is not None:
+            torch.manual_seed(self.cfg.seed)
+        
         history = []
 
         for _ in tqdm(range(self.cfg.n_epochs)):
@@ -80,9 +83,9 @@ class Wrapper(nn.Module):
             loss = self.criterion(y_hat, features)
             history += [loss.item()]
             
-            self.optimizer.zero_grad()
+            optimizer.zero_grad()
             loss.backward()
-            self.optimizer.step()
-            self.scheduler.step()
+            optimizer.step()
+            scheduler.step()
 
         return px.scatter(y=history, x=list(range(self.cfg.n_epochs)), log_y=True, labels=dict(x="Epoch", y="Loss"))
