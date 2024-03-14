@@ -42,7 +42,7 @@ class Model(nn.Module):
         
         return out2 * out3
    
-cfg = Config(n_hidden=2, n_features=6, n_instances=8, n_epochs=2_000)
+cfg = Config(n_hidden=5, n_features=8, n_instances=8, n_epochs=2_000)
 wrapper = Wrapper(Model, cfg)
 
 torch.manual_seed(0)
@@ -68,44 +68,30 @@ plot_basis_predictions(wrapper)
 
 # %%
 
-
-p = torch.zeros(cfg.n_instances, cfg.n_hidden + 1, cfg.n_features + 1, device=cfg.device)
-p[:, :-1, :-1] = model.p
-p[:, -1, -1] = 1
-
-p_w = einsum(p, model.w, "i hid in, i hid out -> i in out")
-p_v = einsum(p, model.v, "i hid in, i hid out -> i in out")
-
-# p_i = einsum(p_w, p_v, "i in1 out, i in2 out -> i out in1 in2")
-# p_f = rearrange(p_i, "i out in1 in2 -> i out (in1 in2)")
-
-# display(px.imshow(p_f[0].detach().cpu(), **params))
-# display(px.imshow(p_f[-1].detach().cpu(), **params))
-
-combinations = itertools.combinations_with_replacement(range(cfg.n_features+1), 2)
-# combinations = itertools.product(range(cfg.n_features+1), repeat=2)
-pairs = torch.tensor(list(combinations), device=cfg.device)
-
-features = 0.5 * (p_w[:, pairs[:, 0]] * p_v[:, pairs[:, 1]] + p_w[:, pairs[:, 1]] * p_v[:, pairs[:, 0]])
-
-reshaped = rearrange(features, "i feat pair -> i pair feat").detach().cpu()
-labels=dict(x="Interaction", y="Output")
-params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='equal')
-x = [f"{i}-{j}" for i, j in pairs]
-
-fig = px.imshow(reshaped, **params, x=x, labels=labels, facet_col=0, facet_col_wrap=1, height=1400)
-
-titles = [f"{val:.1%} sparsity" for val in wrapper.sparsity()]
-for idx, label in enumerate(titles):
-    fig.layout.annotations[cfg.n_instances-1-idx]['text'] = label
-
-fig
+plot_pairwise_feature_vectors(model.p, model.w, model.v, wrapper.sparsity())
 
 # %%
 px.imshow(features.pow(2).sum(-2).detach().cpu())
 
 # %%
 
-plot_feature_composition(model.p, model.w, model.v, cols=3, instance=4)
+plot_feature_composition(model.p, model.w, model.v, instance=6)
 
 # %%
+plot_overlapped_composition(model.p, model.w, model.v, zmax=1.2, instance=None)
+# %%
+
+vecs, _ = make_pairwise_features(model.p, model.w, model.v, symmetric=True)
+print(vecs)
+
+# px.imshow(vecs[5].T.detach().cpu(), color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='auto', labels=dict(y="Output", x="Pairs"))
+
+# u, s, v = torch.svd(vecs[5].detach().cpu())
+
+# px.imshow(v, color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='auto')
+# px.line(s)
+
+# %%
+vecs, _ = make_pairwise_features(model.p, model.w, model.v, symmetric=True)
+torch.set_printoptions(threshold=10_000)
+vecs

@@ -11,6 +11,21 @@ from typing import List, Optional
 from jaxtyping import Float
 from model import Wrapper
 
+
+def _set_sparsities(fig, sparsity, amt):
+    if sparsity is None:
+        titles = [f"Instance {i}" for i in range(amt)]
+    else:
+        titles = [f"{val:.1%} sparsity" for val in sparsity]
+    _set_annotations(fig, titles)
+    
+    
+def _set_annotations(fig, titles):
+    for annotation in fig.layout.annotations:
+        facet = int(annotation.text.split("=")[-1])
+        annotation.update(text=f"{titles[facet]}")
+
+        
 # TODO: ideally, the colors and general layout could be a bit nicer
 def plot_instances_in_2d(
     instances: Float[Tensor, "instances features hidden"], 
@@ -129,7 +144,7 @@ def plot_nd_correlation(
     return fig
 
 
-def _make_pairwise_features(proj, w, v, symmetric):
+def make_pairwise_features(proj, w, v, symmetric):
     assert w.size() == v.size(), "w and v must have the same shape"
     assert proj.size(1)+1 == w.size(1), "w and v must have one more hidden dimension than proj"
     
@@ -144,34 +159,38 @@ def _make_pairwise_features(proj, w, v, symmetric):
         combinations = itertools.product(range(p.size(2)), repeat=2)
     else:
         combinations = itertools.combinations_with_replacement(range(p.size(2)), 2)
-        
+    
     pairs = torch.tensor(list(combinations), device=proj.device)
     features = 0.5 * (p_w[:, pairs[:, 0]] * p_v[:, pairs[:, 1]] + p_w[:, pairs[:, 1]] * p_v[:, pairs[:, 0]])
+    
+    # The bias terms should be counted twice
+    double = (pairs[:, 1] == p.size(2) - 1) | (pairs[:, 0] == p.size(2) - 1)
+    features[:, double] = 2 * features[:, double]
 
     return features, pairs
 
 
-def plot_pairwise_interactions(
+def plot_pairwise_feature_vectors(
     proj: Float[Tensor, "instances hidden features"],
     w: Float[Tensor, "instances hidden+1 features"],
     v: Float[Tensor, "instances hidden+1 features"],
     sparsity: Optional[Float[Tensor, "x"]],
     symmetric: bool = False
 ):
-    features, pairs = _make_pairwise_features(proj, w, v, symmetric)
+    """
+    Plots the matrix of pairwise feature vectors. Each column represents a feature pair.
+    """
+    features, pairs = make_pairwise_features(proj, w, v, symmetric)
 
     reshaped = einops.rearrange(features, "i pair feat -> i feat pair").detach().cpu()
-    labels=dict(x="Interaction", y="Output")
+    labels=dict(x="Pair", y="Output")
     params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='equal')
     
     x = [f"{i}-{j}" for i, j in pairs]
 
     fig = px.imshow(reshaped, **params, x=x, labels=labels, facet_col=0, facet_col_wrap=1, height=1400)
-
-    titles = [f"{val:.1%} sparsity" for val in sparsity]
-    for idx, label in enumerate(titles):
-        fig.layout.annotations[w.size(0)-1-idx]['text'] = label
-
+    fig.update_layout(title_x=0.5, title="Pairwise Feature Vectors")
+    _set_sparsities(fig, sparsity, amt=w.size(0))
     return fig
 
 
@@ -179,14 +198,53 @@ def plot_feature_composition(
     proj: Float[Tensor, "instances hidden features"],
     w: Float[Tensor, "instances hidden+1 features"],
     v: Float[Tensor, "instances hidden+1 features"],
+    sparsity: Optional[Float[Tensor, "x"]] = None,
     instance: int = -1,
-    cols: int = 2
+    cols: int = 4,
+    **kwargs
 ):
-    features, _ = _make_pairwise_features(proj, w, v, True)
+    """
+    Plots the contributions to a certain output feature from all input feature pairs.
+    Intuitively, this corresponds to taking the n-th element from each of the feature pair vectors and plotting it in a square.
+    """
+    features, _ = make_pairwise_features(proj, w, v, True)
     
-    reshaped = einops.rearrange(features, "i (from to) feat -> i feat from to", to=w.size(2)+1).detach().cpu()
-    labels=dict(x="From", y="To")
+    reshaped = einops.rearrange(features, "i (in1 in2) out -> i out in1 in2", in1=w.size(2)+1).detach().cpu()
     params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='equal')
     
-    print(reshaped.shape)
-    return px.imshow(reshaped[instance], **params, labels=labels, facet_col=0, facet_col_wrap=cols)
+    fig = px.imshow(reshaped[instance], **kwargs, **params, facet_col=0, facet_col_wrap=cols)
+    fig.update_layout(title_x=0.5, title="Output feature contributions")
+    _set_sparsities(fig, sparsity, amt=w.size(0))
+    return fig
+
+
+def plot_overlapped_composition(
+    proj: Float[Tensor, "instances hidden features"],
+    w: Float[Tensor, "instances hidden+1 features"],
+    v: Float[Tensor, "instances hidden+1 features"],
+    sparsity: Optional[Float[Tensor, "x"]] = None,
+    instance: Optional[int] = None,
+    cols: int = 4,
+    **kwargs
+):
+    """
+    Plots the same thing as plot_feature_composition, but each output feature contribution matrix is overlapped within the same instance.
+    This doesn't seem to make sense initially but seeing as most of the plots generated with the above method are very sparse,
+    it is generally a bit more clear. Additionally, in cases were the above plots are a bit hectic, 
+    this seems to always create very clean patterns. Why this is the case, isn't fully clear to me yet.
+    """
+    features, _ = make_pairwise_features(proj, w, v, True)
+    
+    reshaped = einops.rearrange(features, "i (in1 in2) out -> i out in1 in2", in1=w.size(2)+1).detach().cpu()
+    reshaped = einops.reduce(reshaped, "i out in1 in2 -> i in1 in2", "sum")
+    
+    params = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0, aspect='equal')
+    
+    if instance is not None:
+        fig = px.imshow(reshaped[instance], **kwargs, **params)
+    else:
+        fig = px.imshow(reshaped, **kwargs, **params, facet_col=0, facet_col_wrap=cols)
+
+    fig.update_layout(title_x=0.5, title="Overlapped output feature contributions")
+    _set_sparsities(fig, sparsity, amt=w.size(0))
+    return fig
