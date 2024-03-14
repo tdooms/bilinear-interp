@@ -42,3 +42,9 @@ Also, we limit ourselves to 2D in this description.
 The plots above represent the 5 and 7 dimensional case, we can see that this represents the directions (orthogonally) without any bias.
 
 > I should think more about exactly what this means.
+
+## Why pentagons?
+
+These experiments show that models can learn every kind of 2D structure. However, when also training the projection, the models always settles on only representing 5 features in 2 dimensions.
+
+4: 

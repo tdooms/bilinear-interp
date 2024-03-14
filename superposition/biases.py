@@ -42,7 +42,7 @@ class Model(SPModel):
         
         return out2 * out3
    
-cfg = Config(n_hidden=5, n_features=8, n_epochs=2_000)
+cfg = Config(n_hidden=2, n_features=10, n_epochs=10_000)
 model = Model(cfg)
 
 model.train()

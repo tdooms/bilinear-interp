@@ -15,21 +15,27 @@ from plotting import *
 # %%
 @dataclass
 class Config(SPConfig):
-    pass
+    n_projected_features: Optional[int] = None
 
 class Model(SPModel):
     def __init__(self, cfg: Config) -> None:
         super().__init__(cfg)
         assert cfg.n_hidden <= 2, "Geometric projections are not yet implemented for more than 2 dimensions."
+        assert cfg.n_projected_features is None or cfg.n_projected_features <= cfg.n_features, "Projected features must be smaller than or equal to the original features."
         
         self.cfg = cfg
         
+        n_proj = cfg.n_features if cfg.n_projected_features is None else cfg.n_projected_features
+        
         if cfg.n_hidden == 1:
-            p = torch.arange(cfg.n_features, device=cfg.device).unsqueeze(0) * 2 / cfg.n_features - 1
+            p = torch.arange(n_proj, device=cfg.device).unsqueeze(0) * 2 / cfg.n_features - 1
         if cfg.n_hidden == 2:
-            angles = torch.arange(cfg.n_features, device=cfg.device) * 2 * math.pi / cfg.n_features
+            angles = torch.arange(n_proj, device=cfg.device) * 2 * math.pi / n_proj
             p = torch.stack((angles.cos(), angles.sin()), dim=0)
         
+        if n_proj != cfg.n_features:
+            p = torch.cat((p, torch.zeros(cfg.n_hidden, cfg.n_features - n_proj)), dim=1)
+            
         self.p = repeat(p, f"h f -> {cfg.n_instances} h f")
 
         w = torch.empty((cfg.n_instances, cfg.n_hidden + 1, cfg.n_features), device=cfg.device)
@@ -49,13 +55,25 @@ class Model(SPModel):
         
         return out2 * out3
 
-cfg = Config(n_hidden=2, n_features=5, seed=None, device="cpu")
+cfg = Config(n_hidden=2, n_features=8, seed=None, n_projected_features=1, device="cpu")
 model = Model(cfg)
 
-model.train()
+model.train()[0]
 
 # %%
-plot_overlapped_composition(model.p, model.w, model.v, model.sparsity())
+# means = []
+# for i in range(11):
+#     cfg = Config(n_hidden=2, n_features=10, n_projected_features=i, n_epochs=1000, device="cpu")
+#     _, history = Model(cfg).train(return_history=True)
+#     means.append(sum(history[-100:]) / 100.0)
+
+px.line(means, title="Mean Loss over 100 epochs", labels=dict(index="Projected Features", value="Loss"))
+
+# %%
+px.imshow(model.p[0])
+
+# %%
+plot_overlapped_composition(model.p, model.w, model.v, model.sparsity(), zmin=-1, zmax=1)
 # %%
 plot_basis_predictions(model)
 # %%
@@ -80,3 +98,4 @@ reshaped = rearrange(features, "i (in1 in2) out -> i in1 out in2", in1=cfg.n_hid
 fig = plot_instances_in_2d(reshaped[-1, :-1, :, :-1], title="Pairwise Feature Vectors", cols=2, domain=0.7)
 fig.update_layout(height=400, width=400)
 fig
+# %%

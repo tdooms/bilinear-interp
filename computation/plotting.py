@@ -22,7 +22,9 @@ def _set_sparsities(fig, sparsity, amt):
 
     
 def _set_annotations(fig, titles):
+    print(len(titles))
     for annotation in fig.layout.annotations:
+        print(facet)
         facet = int(annotation.text.split("=")[-1])
         annotation.update(text=f"{titles[facet]}")
     return fig
@@ -195,7 +197,6 @@ def plot_feature_composition(
     proj: Float[Tensor, "instances hidden features"],
     w: Float[Tensor, "instances hidden+1 features"],
     v: Float[Tensor, "instances hidden+1 features"],
-    sparsity: Optional[Float[Tensor, "x"]] = None,
     title: str = "Output feature contributions",
     instance: int = -1,
     cols: int = COLS,
@@ -206,11 +207,11 @@ def plot_feature_composition(
     Intuitively, this corresponds to taking the n-th element from each of the feature pair vectors and plotting it in a square.
     """
     features, _ = make_pairwise_features(proj, w, v, True)
-    reshaped = einops.rearrange(features, "i (in1 in2) out -> i out in1 in2", in1=w.size(2)+1).detach().cpu()
-    
+    reshaped = einops.rearrange(features, "i (in1 in2) out -> i out in1 in2", in1=proj.size(2)+1).detach().cpu()
+
     fig = px.imshow(reshaped[instance], title=title, facet_col=0, facet_col_wrap=cols, aspect='equal', **COLOR, **kwargs)
     fig.update_layout(title_x=0.5)
-    return _set_sparsities(fig, sparsity, amt=w.size(0))
+    return fig
 
 
 def plot_overlapped_composition(
@@ -230,8 +231,9 @@ def plot_overlapped_composition(
     this seems to always create very clean patterns. Why this is the case, isn't fully clear to me yet.
     """
     features, _ = make_pairwise_features(proj, w, v, True)
+    print(features.shape, w.shape)
     
-    reshaped = einops.rearrange(features, "i (in1 in2) out -> i out in1 in2", in1=w.size(2)+1).detach().cpu()
+    reshaped = einops.rearrange(features, "i (in1 in2) out -> i out in1 in2", in1=proj.size(2)+1).detach().cpu()
     reduced = einops.reduce(reshaped, "i out in1 in2 -> i in1 in2", "sum")
     
     if instance is not None:
@@ -242,11 +244,11 @@ def plot_overlapped_composition(
     fig.update_layout(title_x=0.5)
     return _set_sparsities(fig, sparsity, amt=w.size(0))
 
+
 def plot_hidden_directions(
     w: Float[Tensor, "instances hidden+1 features"],
     v: Float[Tensor, "instances hidden+1 features"],
 ):
-    
     assert w.size() == v.size(), "w and v must have the same shape"
     assert w.size(1) == 3, "Only 2D hidden directions (plus bias) are supported"
     

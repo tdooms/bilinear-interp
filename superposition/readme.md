@@ -17,10 +17,13 @@ In this folder, we aim to study superposition in bilinear layers. Studying the l
 - [x] [correlation](./correlation.py): Correlation and anti-correlation according to [the original paper](https://transformer-circuits.pub/2022/toy_model/index.html).
   - Models that receive pairwise correlated features learn to sum them together in low sparsities.
   - Models that receive pairwise anti-correlated features can simply learn twice as many features.
-- [ ] [geometry](./geometry.py): What kinds of geometry can the bilinear model learn?
+- [x] [geometry](./geometry.py): What kinds of geometry can the bilinear model learn?
   - We test this by removing the projection matrix by a handcrafted one.
+  - There is not much to say here, it can learn all kinds of geometries in the way you'd expect.
+  - I should maybe check if a ReLU can also learn all of this.
 - [ ] : Capacity and alternate setup according to [this Redwood paper](https://arxiv.org/abs/2210.01892).
 - [ ] : Boolean composition and computation according to [this LessWrong post](https://www.lesswrong.com/posts/2roZtSr5TGmLjXMnT/toward-a-mathematical-framework-for-computation-in).
+  - This will be discussed in the computation folder as there are way more experiments in this direction.
 
 ## Leveraging these findings
 
