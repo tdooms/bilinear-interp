@@ -46,16 +46,20 @@ class Model(CMModel):
         
         return out2 * out3
 
-cfg = Config(n_features=7, n_hidden=7, seed=None, device="cpu", lr=0.01, no_projection=True, operation='sum')
+cfg = Config(n_features=8, n_hidden=8, seed=None, device="cpu", lr=0.01, operation={"and":3, "or":2})
 model = Model(cfg)
 
 model.train()[0]
 
 # %%
 
-plot_feature_composition(model.p, model.w, model.v, cols=7, height=600)
+plot_feature_composition(model.p, model.w, model.v, cols=7, height=600, instance=-2)
 
 # %%
 x = model.generate_batch()
 display(px.imshow(model.compute(x)[0].detach()))
-display(px.imshow(model(x)[0].detach()))
+display(px.imshow(model(x)[0].detach(), zmax=3, zmin=2))
+
+# %%
+
+plot_feature_decomposition(model.p, model.w, model.v, output=8)

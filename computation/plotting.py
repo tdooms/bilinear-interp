@@ -167,6 +167,7 @@ def make_pairwise_features(proj, w, v, symmetric):
     # The bias terms should be counted twice
     double = (pairs[:, 1] == p.size(2) - 1) | (pairs[:, 0] == p.size(2) - 1)
     features[:, double] = 2 * features[:, double]
+    features[:, -1] /= 2
 
     return features, pairs
 
@@ -251,6 +252,39 @@ def plot_hidden_directions(
 ):
     assert w.size() == v.size(), "w and v must have the same shape"
     assert w.size(1) == 3, "Only 2D hidden directions (plus bias) are supported"
+    # TODO: I forgot what this was meant to be
+
+
+def plot_feature_decomposition(
+    p: Float[Tensor, "instances hidden features"],
+    w: Float[Tensor, "instances hidden+1 features"],
+    v: Float[Tensor, "instances hidden+1 features"],
+    title: str = "Output feature contributions",
+    instance: int = -1,
+    output: int = 0,
+    **kwargs
+):
+    """
+    Plots the contributions to a certain output feature from all input feature pairs.
+    Intuitively, this corresponds to taking the n-th element from each of the feature pair vectors and plotting it in a square.
+    """
+    features, _ = make_pairwise_features(p, w, v, True)
+    reshaped = einops.rearrange(features, "i (in1 in2) out -> i out in1 in2", in1=p.size(2)+1).detach().cpu()
+
+    fig = make_subplots(rows=1, cols=5, specs=[[dict(colspan=3), dict(), dict(), dict(colspan=1), dict(colspan=1)]])
+    fig.add_trace(go.Heatmap(z=reshaped[instance, output, :-1, :-1], coloraxis="coloraxis"), row=1, col=1)
+    fig.add_trace(go.Heatmap(z=reshaped[instance, output, :-1, -1:], coloraxis="coloraxis"), row=1, col=4)
+    fig.add_trace(go.Heatmap(z=reshaped[instance, output, -1:, -1:], coloraxis="coloraxis"), row=1, col=5)
     
+    fig.update_layout(coloraxis=dict(colorscale="RdBu", cmid=0))
     
+    fig.update_xaxes(tickvals=list(range(p.size(2))), row=1)
+    fig.update_xaxes(showticklabels=False, row=1, col=5)
+    fig.update_xaxes(showticklabels=False, row=1, col=4)
+    
+    fig.update_yaxes(tickvals=list(range(p.size(2))), autorange="reversed", row=1)
+    fig.update_yaxes(showticklabels=False, row=1, col=5)
+    fig.update_yaxes(showticklabels=False, row=1, col=4)
+    
+    return fig
     

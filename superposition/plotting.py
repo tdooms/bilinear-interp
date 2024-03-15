@@ -162,10 +162,11 @@ def make_pairwise_features(proj, w, v, symmetric):
     pairs = torch.tensor(list(combinations), device=proj.device)
     features = 0.5 * (p_w[:, pairs[:, 0]] * p_v[:, pairs[:, 1]] + p_w[:, pairs[:, 1]] * p_v[:, pairs[:, 0]])
     
-    # The bias terms should be counted twice
+    # The bias terms should be counted twice, but the bias-bias term only once
     double = (pairs[:, 1] == p.size(2) - 1) | (pairs[:, 0] == p.size(2) - 1)
     features[:, double] = 2 * features[:, double]
-
+    features[:, -1] /= 2
+    
     return features, pairs
 
 
@@ -195,7 +196,6 @@ def plot_feature_composition(
     proj: Float[Tensor, "instances hidden features"],
     w: Float[Tensor, "instances hidden+1 features"],
     v: Float[Tensor, "instances hidden+1 features"],
-    sparsity: Optional[Float[Tensor, "x"]] = None,
     title: str = "Output feature contributions",
     instance: int = -1,
     cols: int = COLS,
@@ -210,7 +210,7 @@ def plot_feature_composition(
     
     fig = px.imshow(reshaped[instance], title=title, facet_col=0, facet_col_wrap=cols, aspect='equal', **COLOR, **kwargs)
     fig.update_layout(title_x=0.5)
-    return _set_sparsities(fig, sparsity, amt=w.size(0))
+    return fig
 
 
 def plot_overlapped_composition(

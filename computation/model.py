@@ -4,7 +4,7 @@ import einops
 import plotly.express as px
 from tqdm import tqdm
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import itertools
 
@@ -27,7 +27,7 @@ class CMConfig:
     importance: str = 'constant'
     probability: str = 'inverted'
     
-    operation: str = 'xor'
+    operation: str = field(default_factory=dict(xor=1))
 
     def __post_init__(self):
         if self.n_hidden is None:
@@ -63,16 +63,21 @@ class CMModel(nn.Module):
         combinations = itertools.combinations(range(self.cfg.n_features), 2)
         pairs = torch.tensor(list(combinations), device=self.cfg.device)
         
-        if self.cfg.operation == 'xor':
-            return (x[..., pairs[:, 0]] ^ x[..., pairs[:, 1]]).float()   
-        elif self.cfg.operation == 'and':
-            return (x[..., pairs[:, 0]] & x[..., pairs[:, 1]]).float()
-        elif self.cfg.operation == 'or':
-            return (x[..., pairs[:, 0]] | x[..., pairs[:, 1]]).float()
-        elif self.cfg.operation == 'sum':
-            return einops.repeat(x.sum(-1), "... -> ... f", f=self.cfg.n_outputs)
-        else: 
-            raise ValueError(f"Unknown operation: {self.cfg.operation} pick from ['xor', 'and', 'or', 'sum']")
+        accum = torch.zeros(x.size(0), self.cfg.n_instances, self.cfg.n_outputs, device=self.cfg.device)
+        
+        for _ in range(self.cfg.operation.get("xor", 0)):
+            accum += (x[..., pairs[:, 0]] ^ x[..., pairs[:, 1]]).float()   
+        for _ in range(self.cfg.operation.get("xnor", 0)):
+            accum += (~(x[..., pairs[:, 0]] ^ x[..., pairs[:, 1]])).float()
+        for _ in range(self.cfg.operation.get("and", 0)):
+            accum += (x[..., pairs[:, 0]] & x[..., pairs[:, 1]]).float()
+        for _ in range(self.cfg.operation.get("nand", 0)):
+            accum += (~(x[..., pairs[:, 0]] & x[..., pairs[:, 1]])).float()
+        for _ in range(self.cfg.operation.get("or", 0)):
+            accum += (x[..., pairs[:, 0]] | x[..., pairs[:, 1]]).float()
+        for _ in range(self.cfg.operation.get("nor", 0)):
+            accum += (~(x[..., pairs[:, 0]] | x[..., pairs[:, 1]])).float()
+        return accum
     
     def criterion(self, y_hat, x):
         y = self.compute(x)

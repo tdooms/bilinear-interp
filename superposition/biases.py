@@ -42,10 +42,10 @@ class Model(SPModel):
         
         return out2 * out3
    
-cfg = Config(n_hidden=2, n_features=10, n_epochs=10_000)
+cfg = Config(n_hidden=2, n_features=4, n_epochs=1_000, seed=None)
 model = Model(cfg)
 
-model.train()
+model.train()[0]
 
 # %%
 
