@@ -17,7 +17,18 @@ layers use to ‘construct’ their (potentially exponential) larger number of f
   - _Bilinear layers may have little to no cost in terms of performance_. A comparison of activations functions found that bilinear activations outperformed ReLU in transformer models [[3]](#3). It had only slightly worse performance compared to SwiGLU, a modern version of the Gated Linear Unit (GLU) that is used in LLama and PaLM models. The bilinear activation can be seen as the simplest type of GLU.
 - **Our goal**
   - Our goal is to demonstrate the utility of bilinear layers by extracting features for a bilinear model trained on a simple tasks, such as MNIST, and tracing their computation through the model. Ideally these features will be constructed solely from the model weights.
- 
+
+## Approach
+
+## Decomposing bilinear layers
+
+## Features for a single layer MNIST model
+
+## Feature reproducibility
+
+## Features in the uncompressed vs compressed regime
+
+## Features in deep MNIST models
   
 # References
 - <a id="1">[1]</a> Towards Monosemanticity: Decomposing Language Models With Dictionary Learning [[link](https://transformer-circuits.pub/2023/monosemantic-features/index.html)] Bricken et al 10/2024. Anthropic. 
