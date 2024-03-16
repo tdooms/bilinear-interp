@@ -58,7 +58,7 @@ $b^2+b = (0, 1)$
 
 $2ab = -1$
 
-> For the other superposition side, just swap the location of the one in the output.
+> For the other superposition side, just swap the location of the ones in the output.
 
 
 ### Superposition $\odot$ AND

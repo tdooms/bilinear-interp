@@ -255,28 +255,41 @@ def plot_hidden_directions(
     # TODO: I forgot what this was meant to be
 
 
-def plot_feature_decomposition(
+def plot_output_interaction(
     p: Float[Tensor, "instances hidden features"],
     w: Float[Tensor, "instances hidden+1 features"],
     v: Float[Tensor, "instances hidden+1 features"],
-    title: str = "Output feature contributions",
     instance: int = -1,
-    output: int = 0,
+    labels: List[str] = None,
     **kwargs
 ):
     """
-    Plots the contributions to a certain output feature from all input feature pairs.
-    Intuitively, this corresponds to taking the n-th element from each of the feature pair vectors and plotting it in a square.
+    Plots the contributions to a selected output feature. The plot contains three main parts:
+    - The interaction between the input features (feature-feature interaction)
+    - The bias term for each input feature (bias-feature interaction)
+    - The constant term (bias-bias interaction)
     """
     features, _ = make_pairwise_features(p, w, v, True)
     reshaped = einops.rearrange(features, "i (in1 in2) out -> i out in1 in2", in1=p.size(2)+1).detach().cpu()
 
-    fig = make_subplots(rows=1, cols=5, specs=[[dict(colspan=3), dict(), dict(), dict(colspan=1), dict(colspan=1)]])
-    fig.add_trace(go.Heatmap(z=reshaped[instance, output, :-1, :-1], coloraxis="coloraxis"), row=1, col=1)
-    fig.add_trace(go.Heatmap(z=reshaped[instance, output, :-1, -1:], coloraxis="coloraxis"), row=1, col=4)
-    fig.add_trace(go.Heatmap(z=reshaped[instance, output, -1:, -1:], coloraxis="coloraxis"), row=1, col=5)
+    specs = [[dict(colspan=3), dict(), dict(), dict(colspan=1), dict(colspan=1)]]
+    titles = ("", "Interaction", "", "Bias", "Constant")
     
-    fig.update_layout(coloraxis=dict(colorscale="RdBu", cmid=0))
+    fig = make_subplots(rows=1, cols=5, specs=specs, subplot_titles=titles, **kwargs)
+    
+    params = dict(coloraxis="coloraxis", name="", hovertemplate="(%{x}, %{y}): %{z:.2f}")
+    interactions = [go.Heatmap(z=reshaped[instance, i, :-1, :-1], **params) for i in range(v.size(2))]
+    _ = [fig.add_trace(interaction, row=1, col=1) for interaction in interactions]
+    
+    params = dict(coloraxis="coloraxis", name="", hovertemplate="%{y}: %{z:.2f}")
+    biases = [go.Heatmap(z=reshaped[instance, i, :-1, -1:], **params) for i in range(v.size(2))]
+    _ = [fig.add_trace(bias, row=1, col=4) for bias in biases]
+    
+    params = dict(coloraxis="coloraxis", name="", hovertemplate="%{z:.2f}")
+    constants = [go.Heatmap(z=reshaped[instance, i, -1:, -1:], **params) for i in range(v.size(2))]
+    _ = [fig.add_trace(constant, row=1, col=5) for constant in constants]
+    
+    fig.update_layout(title=f"Output Feature {0 if labels is None else labels[0]}", title_x=0.5, coloraxis=dict(colorscale="RdBu", cmid=0, cmax=1, cmin=-1))
     
     fig.update_xaxes(tickvals=list(range(p.size(2))), row=1)
     fig.update_xaxes(showticklabels=False, row=1, col=5)
@@ -286,5 +299,23 @@ def plot_feature_decomposition(
     fig.update_yaxes(showticklabels=False, row=1, col=5)
     fig.update_yaxes(showticklabels=False, row=1, col=4)
     
+    
+    steps = [dict(method="update", 
+                  args=[
+                      dict(visible=[(i%v.size(2)==idx) for i, _ in enumerate(fig.data)]), 
+                      dict(title=f"Output Feature {idx if labels is None else labels[idx]}")
+                    ],
+                  label="",
+                  ) for idx in range(v.size(2))]
+    
+    sliders = [dict(
+        font=dict(color="white"),
+        currentvalue=dict(prefix="Feature "),
+        active=0,
+        pad={"t": 50},
+        steps=steps
+    )]
+    
+    fig.update_layout(sliders=sliders)
     return fig
     

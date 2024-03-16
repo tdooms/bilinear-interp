@@ -24,13 +24,22 @@ $$b^w \odot Vh = (\sum_i b^w_i) \odot (\sum_j V_jP_jx)$$
 We can write $b^w_i$ as the product of a bias matrix $B^w_i$ and the identity matrix $I$, which is multiplied by a value that is always 1.
 $$b^w \odot Vh = (\sum_i B^w_i I_i 1) \odot (\sum_j V_jP_jx)$$
 $$b^w \odot Vh = \sum_i \sum_j (B^w_i I_i 1) \odot (V_jP_jx)$$
+
+Similarly, we can rewrite the other bias term.
+$$Wh \odot b^v = \sum_i \sum_j (W_iP_ix) \odot (B^v_i I_i 1)$$
+
+And the bias-bias term.
+$$b^w \odot b^v = \sum_i \sum_j (B^w_i I_i 1) \odot (B^v_j I_j 1) $$
+
 TODO: I have to write some more stuff here probably.
 
 This large sum can them be recomposed into.
-$$(Wh \odot Vh) + (b^w \odot Vh) = \sum_i \sum_j (W_iP_ix) \odot (V_jP_jx) + (B^w_i I_i 1) \odot (V_jP_jx)$$
-$$(Wh \odot Vh) + (b^w \odot Vh) = \sum_i \sum_j [(W_iP_ix) + (B^w_i I_i 1)] \odot (V_jP_jx)$$
-$$(Wh \odot Vh) + (b^w \odot Vh) = (\sum_i W_iP_ix + B^w_i I_i 1) \odot (\sum_j V_jP_jx)$$
+$$(Wh \odot Vh) + (b^w \odot Vh) + (Wh \odot b^v) + (b^w \odot b^v)$$
+$$= \sum_i \sum_j (W_iP_ix) \odot (V_jP_jx) + (B^w_i I_i 1) \odot (V_jP_jx) + (W_iP_ix) \odot (B^v_i I_i 1) + (B^w_i I_i 1) \odot (B^v_j I_j 1)$$
+$$=\sum_i \sum_j [(W_iP_ix) + (B^w_i I_i 1)] \odot [(V_jP_jx) + (B^v_j I_j 1)]$$
 
+> TODO: I'm not very familiar with block matrix math
+> 
 ## TL;DR
 
 Instead of using biases, we can simply adapt the weight matrices as follows.

@@ -58,25 +58,30 @@ class CMModel(nn.Module):
         
         self.importance = importance.unsqueeze(0)
         self.probability = probability.unsqueeze(1)
-
-    def compute(self, x):
-        combinations = itertools.combinations(range(self.cfg.n_features), 2)
-        pairs = torch.tensor(list(combinations), device=self.cfg.device)
         
+        self.pairs = list(itertools.combinations(range(self.cfg.n_features), 2))
+
+    def labels(self):
+        return [f"{i} ∧ {j}" for i, j in self.pairs]
+        
+    def compute(self, x):        
         accum = torch.zeros(x.size(0), self.cfg.n_instances, self.cfg.n_outputs, device=self.cfg.device)
         
+        pairs = torch.tensor(self.pairs, device=self.cfg.device)
+        left, right = pairs[:, 0], pairs[:, 1]
+        
         for _ in range(self.cfg.operation.get("xor", 0)):
-            accum += (x[..., pairs[:, 0]] ^ x[..., pairs[:, 1]]).float()   
+            accum += (x[..., left] ^ x[..., right]).float()   
         for _ in range(self.cfg.operation.get("xnor", 0)):
-            accum += (~(x[..., pairs[:, 0]] ^ x[..., pairs[:, 1]])).float()
+            accum += (~(x[..., left] ^ x[..., right])).float()
         for _ in range(self.cfg.operation.get("and", 0)):
-            accum += (x[..., pairs[:, 0]] & x[..., pairs[:, 1]]).float()
+            accum += (x[..., left] & x[..., right]).float()
         for _ in range(self.cfg.operation.get("nand", 0)):
-            accum += (~(x[..., pairs[:, 0]] & x[..., pairs[:, 1]])).float()
+            accum += (~(x[..., left] & x[..., right])).float()
         for _ in range(self.cfg.operation.get("or", 0)):
-            accum += (x[..., pairs[:, 0]] | x[..., pairs[:, 1]]).float()
+            accum += (x[..., left] | x[..., right]).float()
         for _ in range(self.cfg.operation.get("nor", 0)):
-            accum += (~(x[..., pairs[:, 0]] | x[..., pairs[:, 1]])).float()
+            accum += (~(x[..., left] | x[..., right])).float()
         return accum
     
     def criterion(self, y_hat, x):

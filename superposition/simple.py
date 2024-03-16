@@ -8,15 +8,15 @@ from torch import nn
 from einops import *
 import plotly.express as px
 import itertools
-from model import *
-from plotting import *
+from superposition.model import *
+from shared.plotting import *
 
 # %%
 @dataclass
-class Config(ConfigBase):
+class Config(SPConfig):
     learnable_bias: bool = True
 
-class Model(nn.Module):
+class Model(SPModel):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
         self.cfg = cfg
@@ -41,19 +41,16 @@ class Model(nn.Module):
         return (out2 + self.b) * out3
     
 cfg = Config(n_hidden=2, n_features=5, n_epochs=1_000)
-wrapper = Wrapper(Model, cfg)
-
-torch.manual_seed(0)
-model= wrapper.model
-wrapper.train()
+model = Model(cfg)
+model.train()
 
 # %%
 # Sanity check that the model does not learn quadratic functions
-values = wrapper.generate_batch()
+values = model.generate_batch()
 plot_nd_correlation(values, model(values))
 # %%
 
-sparsity = wrapper.sparsity()
+sparsity = model.sparsity()
 display(plot_instances_in_2d(model.v.permute(0, 2, 1).detach().cpu(), sparsity, cols=5, title="v"))
 display(plot_instances_in_2d(model.w.permute(0, 2, 1).detach().cpu(), sparsity, cols=5, title="w"))
 # display(plot_instances_in_2d(model.p.permute(0, 2, 1).detach().cpu(), sparsity, cols=5, title="encoder"))
@@ -62,10 +59,10 @@ display(plot_instances_in_2d(model.w.permute(0, 2, 1).detach().cpu(), sparsity, 
 plot_instances_in_nd(model.w.detach().cpu(), sparsity, cols=5, title="w")
 
 # %%
-plot_basis_predictions(wrapper)
+plot_basis_predictions(model)
 # %%
 
-plot_feature_capacity(wrapper)
+plot_feature_capacity(model)
 
 # %%
 # TODO: fix this

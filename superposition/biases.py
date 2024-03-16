@@ -9,8 +9,8 @@ from einops import *
 import plotly.express as px
 import itertools
 
-from model import *
-from plotting import *
+from superposition.model import *
+from shared.plotting import *
 
 # %%
 @dataclass
