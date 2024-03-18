@@ -44,6 +44,4 @@ def make_dbe(
 ):
     be = make_be(e, w, v)
     return einsum(d, be, "... output second, ... second input1 input2 -> ... output input1 input2")
-
-
     
