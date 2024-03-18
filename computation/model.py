@@ -14,8 +14,9 @@ class CMConfig:
     """A configuration class for superposition models."""
     
     n_instances: int = 8
-    n_features: int = 5
-    n_hidden: int = None
+    n_features: int = 8
+    n_hidden: int = 4
+    n_outputs: int = 28
     
     n_epochs: int = 2_000
     batch_size: int = 512
@@ -27,12 +28,7 @@ class CMConfig:
     importance: str = 'constant'
     probability: str = 'inverted'
     
-    operation: str = field(default_factory=dict(xor=1))
-
-    def __post_init__(self):
-        if self.n_hidden is None:
-            self.n_hidden = math.comb(self.n_features, 2)
-        self.n_outputs = math.comb(self.n_features, 2)
+    operation: dict = field(default_factory=dict)
 
 
 class CMModel(nn.Module):
@@ -64,7 +60,7 @@ class CMModel(nn.Module):
     def labels(self):
         return [f"{i} ∧ {j}" for i, j in self.pairs]
         
-    def compute(self, x):        
+    def compute(self, x):       
         accum = torch.zeros(x.size(0), self.cfg.n_instances, self.cfg.n_outputs, device=self.cfg.device)
         
         pairs = torch.tensor(self.pairs, device=self.cfg.device)
