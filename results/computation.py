@@ -2,8 +2,10 @@
 %load_ext autoreload
 %autoreload 2
 # %%
-from unification.model import *
+from results.model import *
 from shared.plotting import *
+from shared.synthetic import *
+
 from einops import *
 import math
 from dataclasses import dataclass
@@ -29,14 +31,9 @@ class Computation(ToyModel):
         # Predefine the list of all possible pairs of features for later use in the binary operations.
         assert cfg.n_unembed == math.comb(cfg.n_embed, 2), "The unembed dimension must be the number of boolean combinations of the embed."
         self.pairs = list(itertools.combinations(range(self.cfg.n_embed), 2))
-        
-        # Replace the unembedding with an identity matrix.
-        u = torch.eye(cfg.n_outputs, cfg.n_unembed, device=cfg.device)
-        self.u = nn.Parameter(repeat(u, "o u -> i o u", i=cfg.n_instances), requires_grad=False)
     
     def generate_batch(self):
-        dims = (self.cfg.batch_size, self.cfg.n_instances, self.cfg.n_features)
-        return torch.rand(dims, device=self.cfg.device) < self.probability
+        return generate_binary(self.cfg, self.probability)
     
     def compute(self, x):
         accum = torch.zeros(x.size(0), self.cfg.n_instances, self.cfg.n_outputs, device=self.cfg.device)
@@ -62,7 +59,7 @@ class Computation(ToyModel):
     def forward(self, x):
         return super().forward(x.float())
 
-cfg = Config(n_features=6, n_embed=6, n_unembed=15, n_outputs=15, nor=2)
+cfg = Config(n_features=6, n_embed=6, n_unembed=15, n_outputs=15, nor=2, identity_unembed=True)
 model = Computation(cfg)
 model.train()[0]
 

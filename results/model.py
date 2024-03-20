@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from shared import trainer
+from shared.synthetic import *
 from shared.tensors import *
 
 @dataclass
@@ -25,6 +26,9 @@ class ToyConfig:
     
     seed: Optional[int] = 0
     device: str = "cpu"
+    
+    identity_unembed: bool = False
+    identity_embed: bool = False
 
 
 class ToyModel(nn.Module):
@@ -39,8 +43,12 @@ class ToyModel(nn.Module):
         self.cfg = cfg
         scale = (2/(cfg.n_embed+1 + cfg.n_unembed))**(-1/4)
         
-        e = torch.empty((cfg.n_instances, cfg.n_embed, cfg.n_features), device=cfg.device)
-        self.e = nn.Parameter(scale * nn.init.xavier_normal_(e))
+        if cfg.identity_embed:
+            e = torch.eye(cfg.n_embed, cfg.n_features, device=cfg.device)
+            self.e = nn.Parameter(repeat(e, f"e f -> {cfg.n_instances} e f"), requires_grad=False)
+        else:
+            e = torch.empty((cfg.n_instances, cfg.n_embed, cfg.n_features), device=cfg.device)
+            self.e = nn.Parameter(scale * nn.init.xavier_normal_(e))
         
         w = torch.empty((cfg.n_instances, cfg.n_unembed, cfg.n_embed + 1), device=cfg.device)
         self.w = nn.Parameter(scale * nn.init.xavier_normal_(w))
@@ -48,8 +56,12 @@ class ToyModel(nn.Module):
         v = torch.empty((cfg.n_instances, cfg.n_unembed, cfg.n_embed + 1), device=cfg.device)
         self.v = nn.Parameter(scale * nn.init.xavier_normal_(v))
         
-        u = torch.empty((cfg.n_instances, cfg.n_outputs, cfg.n_unembed), device=cfg.device)
-        self.u = nn.Parameter(scale * nn.init.xavier_normal_(u))
+        if cfg.identity_unembed:
+            u = torch.eye(cfg.n_outputs, cfg.n_unembed, device=cfg.device)
+            self.u = nn.Parameter(repeat(u, f"o u -> {cfg.n_instances} o u"), requires_grad=False)
+        else:
+            u = torch.empty((cfg.n_instances, cfg.n_outputs, cfg.n_unembed), device=cfg.device)
+            self.u = nn.Parameter(scale * nn.init.xavier_normal_(u))
         
         self.probability = 50 ** torch.linspace(0, -1, cfg.n_instances, device=cfg.device).unsqueeze(1)
         self.importance = torch.ones(cfg.n_features, device=cfg.device).unsqueeze(0)
@@ -75,10 +87,7 @@ class ToyModel(nn.Module):
         return out4
         
     def generate_batch(self):
-        dims = (self.cfg.batch_size, self.cfg.n_instances, self.cfg.n_features)
-        features = torch.rand(dims, device=self.cfg.device)
-        mask = torch.rand(dims, device=self.cfg.device) < self.probability
-        return features * mask
+        return generate_random(self.cfg, self.probability)
     
     def train(self):
         return trainer.simple(self, self.cfg)

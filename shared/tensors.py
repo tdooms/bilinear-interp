@@ -7,7 +7,7 @@ from typing import Optional
 
 
 def svd(
-    xbx: Float[Tensor, "output input input"], 
+    xbx: Float[Tensor, "output input input"],
     projection: Optional[Float[Tensor, "hidden input"]] = None,
 ):
     mat =  rearrange(xbx, "output input1 input2 -> output (input1 input2)")
@@ -16,7 +16,7 @@ def svd(
     
     inputs = rearrange(v, "(input1 input2) output -> output input1 input2", input1=xbx.size(-1))
     outputs = u @ torch.diag(s)
-    
+
     if projection is not None:
         inputs = projection.T @ inputs @ projection
         output = output @ projection[:-1, :-1]
