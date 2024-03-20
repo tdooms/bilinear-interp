@@ -133,7 +133,7 @@ class MnistModel(nn.Module):
               print(f'Accuracy on validation set: {acc} %')
             return acc
 
-    def train_model(self, train_loader, test_loader, optimizer=None, scheduler=None):
+    def train(self, train_loader, test_loader, optimizer=None, scheduler=None):
         if optimizer is None:
             optimizer = torch.optim.AdamW(self.parameters(), lr=self.cfg.lr, weight_decay=self.cfg.weight_decay)
         if scheduler is None:
