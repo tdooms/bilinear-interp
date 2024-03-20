@@ -71,14 +71,14 @@ model.train()[0]
 
 # %%
 
-proj_uvwe = uvwe(model.proj, model.v, model.w, model.proj.transpose(-1, -2))
-target_uvwe = uvwe(model.target, model.v, model.w, model.target.transpose(-1, -2))
+proj_uvwe = make_dbe(model.proj, model.v, model.w, model.proj.transpose(-1, -2))
+target_uvwe = make_dbe(model.target, model.v, model.w, model.target.transpose(-1, -2))
 
 
-proj_uvw = uvw(model.w, model.v, model.proj.transpose(-1, -2))
+proj_uvw = make_db(model.w, model.v, model.proj.transpose(-1, -2))
 
-proj_vwe = vwe(model.proj, model.v, model.w)
-wv = vw(model.v, model.w, True)
+proj_vwe = make_be(model.proj, model.v, model.w)
+wv = make_b(model.v, model.w, True)
 
 # %%
 

@@ -15,8 +15,8 @@ class ToyConfig:
     n_instances: int = 8
     
     n_features: int = 8
-    n_encoder: int = 4
-    n_decoder: int = 4
+    n_embed: int = 4
+    n_unembed: int = 4
     n_outputs: int = 8
     
     n_epochs: int = 1_000
@@ -37,19 +37,22 @@ class ToyModel(nn.Module):
         super().__init__()
         
         self.cfg = cfg
-        scale = (2/(cfg.n_encoder+1 + cfg.n_decoder))**(-1/4)
+        scale = (2/(cfg.n_embed+1 + cfg.n_unembed))**(-1/4)
         
-        e = torch.empty((cfg.n_instances, cfg.n_encoder, cfg.n_inputs), device=cfg.device)
+        e = torch.empty((cfg.n_instances, cfg.n_embed, cfg.n_features), device=cfg.device)
         self.e = nn.Parameter(scale * nn.init.xavier_normal_(e))
         
-        w = torch.empty((cfg.n_instances, cfg.n_decoder, cfg.n_encoder + 1), device=cfg.device)
+        w = torch.empty((cfg.n_instances, cfg.n_unembed, cfg.n_embed + 1), device=cfg.device)
         self.w = nn.Parameter(scale * nn.init.xavier_normal_(w))
         
-        v = torch.empty((cfg.n_instances, cfg.n_decoder, cfg.n_encoder + 1), device=cfg.device)
+        v = torch.empty((cfg.n_instances, cfg.n_unembed, cfg.n_embed + 1), device=cfg.device)
         self.v = nn.Parameter(scale * nn.init.xavier_normal_(v))
         
-        d = torch.empty((cfg.n_instances, cfg.n_outputs, cfg.n_decoder), device=cfg.device)
-        self.d = nn.Parameter(scale * nn.init.xavier_normal_(d))
+        u = torch.empty((cfg.n_instances, cfg.n_outputs, cfg.n_unembed), device=cfg.device)
+        self.u = nn.Parameter(scale * nn.init.xavier_normal_(u))
+        
+        self.probability = 50 ** torch.linspace(0, -1, cfg.n_instances, device=cfg.device).unsqueeze(1)
+        self.importance = torch.ones(cfg.n_features, device=cfg.device).unsqueeze(0)
         
     def compute(self, x):       
         return x
@@ -60,14 +63,22 @@ class ToyModel(nn.Module):
         return reduce(error, 'b i f -> i', 'mean').sum()
 
     def forward(self, x):
-        raise NotImplementedError
+        ones =  torch.ones(x.size(0), self.cfg.n_instances, 1, device=self.cfg.device)
+        
+        out1 = einsum(self.e, x, 'i e f, ... i f -> ... i e')
+        out1 = torch.cat([out1, ones], dim=-1)
+        
+        out2 = einsum(self.w, out1, 'i u e, ... i e -> ... i u')
+        out3 = einsum(self.v, out1, 'i u e, ... i e -> ... i u')
+        
+        out4 = einsum(self.u, out2 * out3, 'i o u, ... i u -> ... i o')
+        return out4
         
     def generate_batch(self):
         dims = (self.cfg.batch_size, self.cfg.n_instances, self.cfg.n_features)
-        features = torch.rand(dims, device=self.cfg.device) * self.cfg.feature_scale
+        features = torch.rand(dims, device=self.cfg.device)
         mask = torch.rand(dims, device=self.cfg.device) < self.probability
         return features * mask
-    
     
     def train(self):
         return trainer.simple(self, self.cfg)
@@ -81,9 +92,9 @@ class ToyModel(nn.Module):
         return make_be(self.e, self.w, self.v)
     
     @property
-    def db(self):
-        return make_db(self.w, self.v, self.d)
+    def ub(self):
+        return make_ub(self.w, self.v, self.u)
     
     @property
-    def dbe(self):
-        return make_dbe(self.e, self.w, self.v, self.d)
+    def ube(self):
+        return make_ube(self.e, self.w, self.v, self.u)

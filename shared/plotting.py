@@ -91,7 +91,7 @@ def _generate_basis_predictions(model: nn.Module):
 
 def plot_basis_predictions(model: nn.Module, **kwargs):
     predictions = _generate_basis_predictions(model)
-    labels=dict(y="Instance")
+    labels=dict(y="Instance", x="Prediction")
     
     fig = px.imshow(predictions, facet_col=0, labels=labels, aspect='auto', **COLOR, **kwargs)
     return set_facet_labels(fig, default="Feature")
@@ -170,12 +170,13 @@ def plot_input_composition(
     fig = px.imshow(tensor, title=title, labels=dict(x="Input", y="Input"), facet_col=0, facet_col_wrap=cols, aspect='equal', **COLOR, **kwargs)
     fig.update_layout(title_x=0.5)
     return set_facet_labels(fig, labels, default="Output")
-
+    
 
 def plot_svd_decomposition(
     tensor: Float[Tensor, "output hidden hidden"],
     proj: Optional[Float[Tensor, "hidden input"]] = None,
     title: str = "SVD decomposition",
+    height: int = 800,
     **kwargs
 ):
     outputs = tensor.size(0)
@@ -219,7 +220,7 @@ def plot_svd_decomposition(
 
     # for i in range(tensor.size(0)):
     
-    fig.update_layout(title=title, title_x=0.5, coloraxis=dict(colorscale="RdBu", cmid=0, cmax=1, cmin=-1))
+    fig.update_layout(title=title, title_x=0.5, height=height, coloraxis=dict(colorscale="RdBu", cmid=0, cmax=1, cmin=-1))
     
 
     return fig
@@ -275,18 +276,20 @@ def plot_output_composition(
     tensor: Float[Tensor, "instance output input input"],
     labels: Optional[Float[Tensor, "x"]] = None,
     instance: Optional[int] = None,
-    reduction = None,
+    reduction = 'sum',
     title: str = "Overlapped output feature contributions",
     cols: int = COLS,
     **kwargs
 ):
-    """
+    """ Creates an overlapped plot of the output feature contributions.
+    
     Plots the same thing as plot_feature_composition, but each output feature contribution matrix is overlapped within the same instance.
     This doesn't seem to make sense initially but seeing as most of the plots generated with the above method are very sparse,
     it is generally a bit more clear. Additionally, in cases were the above plots are a bit hectic, 
     this seems to always create very clean patterns. Why this is the case, isn't fully clear to me yet.
     """
     
+    assert len(tensor.shape) == 4, "The tensor must have 4 dimensions"
     reduced = reduce(tensor, "i out in1 in2 -> i in1 in2", reduction)
     
     if instance is not None:
@@ -304,8 +307,9 @@ def plot_output_interaction(
     title: str = "Output Feature",
     **kwargs
 ):
-    """
-    Plots the contributions to a selected output feature. The plot contains three main parts:
+    """Plots the contributions to a selected output feature. 
+    
+    The plot contains three main parts:
     - The interaction between the input features (feature-feature interaction)
     - The bias term for each input feature (bias-feature interaction)
     - The constant term (bias-bias interaction)
@@ -316,7 +320,8 @@ def plot_output_interaction(
     title -- The title of the plot, to be concatenated with the label of the selected output.
     kwargs -- Additional arguments to be passed to the make_subplots function.
     """
-    outputs = tensor.size(1)
+    assert len(tensor.shape) == 3, "The tensor must have 3 dimensions"
+    outputs = tensor.size(0)
     
     specs = [[dict(colspan=3), dict(), dict(), dict(colspan=1), dict(colspan=1)]]
     titles = ("", "Interaction", "", "Bias", "Constant")
