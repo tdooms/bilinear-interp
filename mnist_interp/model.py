@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import einops
+import numpy as np
 
 class MnistConfig:
     """A configuration class for MNIST models"""
