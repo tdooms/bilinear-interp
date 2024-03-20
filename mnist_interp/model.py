@@ -4,20 +4,22 @@ import einops
 
 class MnistConfig:
     """A configuration class for MNIST models"""
+    def __init__(self, **kwargs):
+        self.input_size = 784
+        self.hidden_sizes = [3_000]
+        self.num_classes = 10
+        self.activation_type = 'bilinear'
+        self.random_seed = 0
+        self.rms_norm = False
+    
+        # training params
+        self.num_epochs = 10
+        self.lr = 0.001
+        self.weight_decay = 0
+        self.lr_decay = 0.5
+        self.lr_decay_step = 2
 
-    input_size = 784
-    hidden_sizes = [3_000]
-    num_classes = 10
-    activation_type = 'bilinear'
-    random_seed = 0
-    rms_norm = False
-
-    #training params
-    num_epochs = 10
-    lr = 0.001
-    weight_decay = 0
-    lr_decay = 0.5
-    lr_decay_step = 2
+        self.__dict__.update(kwargs)
 
 class Relu(nn.Module):
     def __init__(self, input_size, output_size, norm):
