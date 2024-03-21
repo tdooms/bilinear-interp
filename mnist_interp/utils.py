@@ -1,4 +1,5 @@
 import torch
+import itertools
 
 def get_pixel_label_mutual_info(train_loader, img_size=(28,28), num_classes = 10):
     class_means = torch.zeros((num_classes,img_size[0]*img_size[1]))
@@ -24,28 +25,22 @@ def get_pixel_label_mutual_info(train_loader, img_size=(28,28), num_classes = 10
     return mutual_info
 
 
-def compute_feature_pair_svd(W1, W2, b1, b2, feature_idxs, return_features = False):
-    device = W1.device
-    feature_idxs = torch.cat([feature_idxs.to(device), torch.tensor([bias_idx]).to(device)], dim=0)
-    idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(mi_idxs,2))).to(device)
-    
-    W1_full = torch.cat([W1, b1.unsqueeze(1)], dim=1)
-    W2_full = torch.cat([W2, b2.unsqueeze(1)], dim=1)
+def compute_svd(W, V, idxs, return_B = False):
+    device = W.device
+    idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(idxs,2))).to(device)
 
     with torch.no_grad():
-        features = (1/2) * W1_full[:,idx_pairs[:,0]] * W2_full[:,idx_pairs[:,1]] + \
-            (1/2) * W1_full[:,idx_pairs[:,1]] * W2_full[:,idx_pairs[:,0]]
-        svd = torch.svd(features)
-    if return_features:
-        return svd, features
+        B = (1/2) * W[:,idx_pairs[:,0]] * V[:,idx_pairs[:,1]] + \
+            (1/2) * W[:,idx_pairs[:,1]] * V[:,idx_pairs[:,0]]
+        svd = torch.svd(B)
+    if return_B:
+        return svd, B
     else:
-        del features
-        torch.cuda.empty_cache()
-        return svd        
+        del B
+        if torch.cuda.is_available: torch.cuda.empty_cache()
+        return svd
 
-def compute_feature_pair_svd_from_layer(layer, feature_idxs, feturn_features = False):
-    W1 = layer.linear1.weight
-    W2 = layer.linear2.weight
-    b1 = layer.linear1.bias
-    b2 = layer.linear2.bias
-    return compute_feature_pair_svd(W1,W2,b1,b2,feature_idxs, return_feature=return_features)
+def compute_svd_from_layer(layer, idxs, return_B = False):
+    W = layer.linear1.weight
+    V = layer.linear2.weight
+    return compute_svd(W, V, idxs, return_B=return_B)

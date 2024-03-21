@@ -1,23 +1,28 @@
 import torch
 import torch.nn as nn
 import einops
+import numpy as np
 
 class MnistConfig:
     """A configuration class for MNIST models"""
+    def __init__(self, **kwargs):
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    input_size = 784
-    hidden_sizes = [3_000]
-    num_classes = 10
-    activation_type = 'bilinear'
-    random_seed = 0
-    rms_norm = False
+        self.input_size = 784
+        self.hidden_sizes = [3_000]
+        self.num_classes = 10
+        self.activation_type = 'bilinear'
+        self.random_seed = 0
+        self.rms_norm = False
+    
+        # training params
+        self.num_epochs = 10
+        self.lr = 0.001
+        self.weight_decay = 0
+        self.lr_decay = 0.5
+        self.lr_decay_step = 2
 
-    #training params
-    num_epochs = 10
-    lr = 0.001
-    weight_decay = 0
-    lr_decay = 0.5
-    lr_decay_step = 2
+        self.__dict__.update(kwargs)
 
 class Relu(nn.Module):
     def __init__(self, input_size, output_size, norm):
@@ -41,8 +46,8 @@ class Relu(nn.Module):
 class Bilinear(nn.Module):
     def __init__(self, input_size, output_size, norm):
         super(Bilinear, self).__init__()
-        self.linear1 = nn.Linear(input_size, output_size)
-        self.linear2 = nn.Linear(input_size, output_size)
+        self.linear1 = nn.Linear(input_size+1, output_size)
+        self.linear2 = nn.Linear(input_size+1, output_size)
         
         scale = np.sqrt(2/(input_size + output_size))
         nn.init.xavier_normal_(self.linear1.weight, gain=scale**(-1/4))
@@ -55,8 +60,10 @@ class Bilinear(nn.Module):
           self.rms_norm = RmsNorm()
         
     def forward(self, x):
-        out1 = self.linear1(x)
-        out2 = self.linear2(x)
+        ones =  torch.ones(x.size(0), 1).to(x.device)
+        self.input = torch.cat((x, ones), dim=-1)
+        out1 = self.linear1(self.input)
+        out2 = self.linear2(self.input)
         self.out_prenorm = out1 * out2
         if self.norm:
           self.out = self.rms_norm(self.out_prenorm)
@@ -75,7 +82,7 @@ class RmsNorm(nn.Module):
 
 class MnistModel(nn.Module):
     def __init__(self, cfg):
-        super(MnistModel, self).__init__()
+        super().__init__()
         self.cfg = cfg
 
         if cfg.random_seed is not None:
@@ -117,8 +124,8 @@ class MnistModel(nn.Module):
             n_correct = 0
             n_samples = 0
             for images, labels in test_loader:
-                images = images.reshape(-1, 28*28).to(device)
-                labels = labels.to(device)
+                images = images.reshape(-1, 28*28).to(self.cfg.device)
+                labels = labels.to(self.cfg.device)
                 outputs = self.forward(images)
                 # max returns (value ,index)
                 _, predicted = torch.max(outputs.data, 1)
@@ -130,7 +137,7 @@ class MnistModel(nn.Module):
               print(f'Accuracy on validation set: {acc} %')
             return acc
 
-    def train_model(self, train_loader, test_loader, optimizer=None, scheduler=None):
+    def train(self, train_loader, test_loader, optimizer=None, scheduler=None):
         if optimizer is None:
             optimizer = torch.optim.AdamW(self.parameters(), lr=self.cfg.lr, weight_decay=self.cfg.weight_decay)
         if scheduler is None:
@@ -143,8 +150,8 @@ class MnistModel(nn.Module):
             for i, (images, labels) in enumerate(train_loader):
                 # origin shape: [100, 1, 28, 28]
                 # resized: [100, 784]
-                images = images.reshape(-1, 28*28).to(device)
-                labels = labels.to(device)
+                images = images.reshape(-1, 28*28).to(self.cfg.device)
+                labels = labels.to(self.cfg.device)
 
                 # Forward pass
                 outputs = self.forward(images)
