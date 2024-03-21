@@ -7,6 +7,11 @@ def polygon(n, device='cpu'):
     angles = torch.arange(n, device=device) * 2 * math.pi / n
     return torch.stack((angles.cos(), angles.sin()), dim=0)
 
+def random_orthogonal(n_outputs, n_inputs):
+    guass = torch.randn(n_outputs, n_inputs)
+    u, _, v = torch.svd(guass)
+    return u @ v
+
 
 def extend_to_fit(projection, n_features):
     if projection.size(1) < n_features:

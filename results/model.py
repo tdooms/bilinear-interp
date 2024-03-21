@@ -107,3 +107,7 @@ class ToyModel(nn.Module):
     @property
     def ube(self):
         return make_ube(self.e, self.w, self.v, self.u)
+    
+    @property
+    def p(self):
+        return torch.stack([torch.block_diag(self.e[i], torch.tensor([1])) for i in range(self.e.size(0))], dim=0)

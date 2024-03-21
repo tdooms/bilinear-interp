@@ -19,7 +19,7 @@ def svd(
 
     if projection is not None:
         inputs = projection.T @ inputs @ projection
-        output = output @ projection[:-1, :-1]
+        outputs = outputs @ projection[:-1, :-1]
     
     return inputs, outputs
 
