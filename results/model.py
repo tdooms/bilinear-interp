@@ -9,6 +9,7 @@ from typing import Optional
 from shared import trainer
 from shared.synthetic import *
 from shared.tensors import *
+from shared.projections import *
 
 @dataclass
 class ToyConfig:
@@ -27,8 +28,8 @@ class ToyConfig:
     seed: Optional[int] = 0
     device: str = "cpu"
     
-    identity_unembed: bool = False
-    identity_embed: bool = False
+    unembed: Optional[any] = None
+    embed: Optional[any] = None
 
 
 class ToyModel(nn.Module):
@@ -43,21 +44,32 @@ class ToyModel(nn.Module):
         self.cfg = cfg
         scale = (2/(cfg.n_embed+1 + cfg.n_unembed))**(-1/4)
         
-        if cfg.identity_embed:
-            e = torch.eye(cfg.n_embed, cfg.n_features, device=cfg.device)
-            self.e = nn.Parameter(repeat(e, f"e f -> {cfg.n_instances} e f"), requires_grad=False)
-        else:
-            e = torch.empty((cfg.n_instances, cfg.n_embed, cfg.n_features), device=cfg.device)
-            self.e = nn.Parameter(scale * nn.init.xavier_normal_(e))
-        
         w = torch.empty((cfg.n_instances, cfg.n_unembed, cfg.n_embed + 1), device=cfg.device)
         self.w = nn.Parameter(scale * nn.init.xavier_normal_(w))
         
         v = torch.empty((cfg.n_instances, cfg.n_unembed, cfg.n_embed + 1), device=cfg.device)
         self.v = nn.Parameter(scale * nn.init.xavier_normal_(v))
         
-        if cfg.identity_unembed:
+        if cfg.embed == 'identity':
+            e = torch.eye(cfg.n_embed, cfg.n_features, device=cfg.device)
+            self.e = nn.Parameter(repeat(e, f"e f -> {cfg.n_instances} e f"), requires_grad=False)
+        elif cfg.embed == 'polygon':
+            assert cfg.n_embed == 2, "Only 2d polygons are supported"
+            e = polygon(cfg.n_features)
+            self.e = nn.Parameter(repeat(e, f"e f -> {cfg.n_instances} e f"), requires_grad=False)
+        elif cfg.embed == 'orthogonal':
+            e = random_orthogonal(cfg.n_outputs, cfg.n_unembed)
+            self.e = nn.Parameter(repeat(e, f"o u -> {cfg.n_instances} o u"), requires_grad=False)
+        else:
+            e = torch.empty((cfg.n_instances, cfg.n_embed, cfg.n_features), device=cfg.device)
+            self.e = nn.Parameter(scale * nn.init.xavier_normal_(e))
+        
+        
+        if cfg.unembed == 'identity':
             u = torch.eye(cfg.n_outputs, cfg.n_unembed, device=cfg.device)
+            self.u = nn.Parameter(repeat(u, f"o u -> {cfg.n_instances} o u"), requires_grad=False)
+        elif cfg.unembed == 'orthogonal':
+            u = random_orthogonal(cfg.n_outputs, cfg.n_unembed)
             self.u = nn.Parameter(repeat(u, f"o u -> {cfg.n_instances} o u"), requires_grad=False)
         else:
             u = torch.empty((cfg.n_instances, cfg.n_outputs, cfg.n_unembed), device=cfg.device)

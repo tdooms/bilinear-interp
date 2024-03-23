@@ -197,25 +197,25 @@ def plot_svd_decomposition(
         inputs = proj.T @ inputs @ proj
         output = output @ proj[:-1, :-1]
     
-    for row in range(tensor.size(0)):
+    for i in range(tensor.size(0)):
         params = dict(coloraxis="coloraxis", name="", hovertemplate="%{y}: %{z:.2f}")
-        fig.add_trace(go.Heatmap(z=output[row].unsqueeze(1), **params), row=row+1, col=1)
+        fig.add_trace(go.Heatmap(z=output[:, i].unsqueeze(1), **params), row=i+1, col=1)
         
         params = dict(coloraxis="coloraxis", name="", hovertemplate="(%{x}, %{y}): %{z:.2f}")
-        fig.add_trace(go.Heatmap(z=inputs[row, :-1, :-1], **params), row=row+1, col=2)
+        fig.add_trace(go.Heatmap(z=inputs[i, :-1, :-1], **params), row=i+1, col=2)
         
         params = dict(coloraxis="coloraxis", name="", hovertemplate="%{y}: %{z:.2f}")
-        fig.add_trace(go.Heatmap(z=inputs[row, :-1, -1:], **params), row=row+1, col=features+2)
+        fig.add_trace(go.Heatmap(z=inputs[i, :-1, -1:], **params), row=i+1, col=features+2)
         
         params = dict(coloraxis="coloraxis", name="", hovertemplate="%{z:.2f}")
-        fig.add_trace(go.Heatmap(z=inputs[row, -1:, -1:], **params), row=row+1, col=features+3)
+        fig.add_trace(go.Heatmap(z=inputs[i, -1:, -1:], **params), row=i+1, col=features+3)
 
-        fig.update_xaxes(showticklabels=False, tickvals=list(range(inputs.size(1))), row=row+1)
-        fig.update_xaxes(showticklabels=True, row=row+1, col=2)
+        fig.update_xaxes(showticklabels=False, tickvals=list(range(inputs.size(1))), row=i+1)
+        fig.update_xaxes(showticklabels=True, row=i+1, col=2)
         
-        fig.update_yaxes(showticklabels=False, tickvals=list(range(inputs.size(1))), row=row+1)
-        fig.update_yaxes(showticklabels=False, row=row+1)
-        fig.update_yaxes(showticklabels=True, row=row+1, col=1)
+        fig.update_yaxes(showticklabels=False, tickvals=list(range(inputs.size(1))), row=i+1)
+        fig.update_yaxes(showticklabels=False, row=i+1)
+        fig.update_yaxes(showticklabels=True, row=i+1, col=1)
         
 
     # for i in range(tensor.size(0)):
