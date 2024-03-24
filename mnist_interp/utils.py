@@ -1,11 +1,13 @@
 import torch
 import itertools
 
+
 def get_pixel_label_mutual_info(train_loader, img_size=(28,28), num_classes = 10):
+    # TODO: make more generic for non-image inputs
     class_means = torch.zeros((num_classes,img_size[0]*img_size[1]))
     class_counts = torch.zeros(num_classes)
     for images, labels in train_loader:
-      images = torch.round(images.reshape(-1, img_size[0]*img_size[1]))
+      images = images.reshape(-1, img_size[0]*img_size[1])
       for idx, label in enumerate(labels):
         class_means[label] += images[idx]
         class_counts[label] += 1
@@ -25,7 +27,7 @@ def get_pixel_label_mutual_info(train_loader, img_size=(28,28), num_classes = 10
     return mutual_info
 
 
-def compute_svd(W, V, idxs, return_B = False):
+def compute_symmetric_svd(W, V, idxs, return_B = False):
     device = W.device
     idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(idxs,2))).to(device)
 
@@ -39,8 +41,3 @@ def compute_svd(W, V, idxs, return_B = False):
         del B
         if torch.cuda.is_available: torch.cuda.empty_cache()
         return svd
-
-def compute_svd_from_layer(layer, idxs, return_B = False):
-    W = layer.linear1.weight
-    V = layer.linear2.weight
-    return compute_svd(W, V, idxs, return_B=return_B)
