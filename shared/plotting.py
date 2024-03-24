@@ -339,7 +339,7 @@ def plot_output_interaction(
     constants = [go.Heatmap(z=tensor[i, -1:, -1:], **params, visible=i==0) for i in range(outputs)]
     _ = [fig.add_trace(constant, row=1, col=5) for constant in constants]
     
-    fig.update_layout(title=f"{title} {0 if labels is None else labels[0]}", title_x=0.5, coloraxis=dict(colorscale="RdBu", cmid=0, cmax=1, cmin=-1))
+    fig.update_layout(title=f"{title} {0 if labels is None else labels[0]}", title_x=0.5, coloraxis=dict(colorscale="RdBu", cmid=0))
     
     fig.update_xaxes(tickvals=list(range(outputs)), row=1)
     fig.update_xaxes(showticklabels=False, row=1, col=5)

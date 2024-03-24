@@ -72,13 +72,13 @@ class Computation(ToyModel):
         return super().forward(x.float())
 
 # cfg = Config(n_embed=5, n_features=5, n_unembed=10, n_outputs=10, embed=None, unembed='identity', nor=1)
-cfg = Config(n_epochs=5000, n_embed=4, n_features=4, n_unembed=6, n_outputs=6, embed='identity', unembed='identity', or_=0.5, and_=0.3, xor=0.2)
+cfg = Config(n_epochs=5000, n_embed=4, n_features=4, n_unembed=6, n_outputs=6, embed='identity', unembed='identity', or_=2, and_=3)
 
 model = Computation(cfg)
 model.train()[0]
 
 # %%
-plot_output_interaction(model.ube[2])
+plot_output_interaction(model.ube[5])
 # %%
 
 
