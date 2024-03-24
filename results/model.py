@@ -25,7 +25,7 @@ class ToyConfig:
     batch_size: int = 512
     lr: float = 0.01
     
-    seed: Optional[int] = 0
+    seed: Optional[int] = None
     device: str = "cpu"
     
     unembed: Optional[any] = None
@@ -84,7 +84,7 @@ class ToyModel(nn.Module):
     def criterion(self, y_hat, x):
         y = self.compute(x)
         error = ((y - y_hat) ** 2)
-        return reduce(error, 'b i f -> i', 'mean').sum()
+        return reduce(error, 'b i f -> i', 'mean')
 
     def forward(self, x):
         ones =  torch.ones(x.size(0), self.cfg.n_instances, 1, device=self.cfg.device)
@@ -101,8 +101,8 @@ class ToyModel(nn.Module):
     def generate_batch(self):
         return generate_random(self.cfg, self.probability)
     
-    def train(self):
-        return trainer.simple(self, self.cfg)
+    def train(self, **kwargs):
+        return trainer.simple(self, self.cfg, **kwargs)
     
     @property
     def b(self):
@@ -110,15 +110,15 @@ class ToyModel(nn.Module):
     
     @property
     def be(self):
-        return make_be(self.e, self.w, self.v)
+        return make_be(self.e, self.b)
     
     @property
     def ub(self):
-        return make_ub(self.w, self.v, self.u)
+        return make_ub(self.b, self.u)
     
     @property
     def ube(self):
-        return make_ube(self.e, self.w, self.v, self.u)
+        return make_ube(self.e, self.b, self.u)
     
     @property
     def p(self):

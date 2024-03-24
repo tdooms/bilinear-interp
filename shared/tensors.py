@@ -27,39 +27,38 @@ def make_b(
     w: Float[Tensor, "... unembed embed"], 
     v: Float[Tensor, "... unembed embed"], 
     symmetrize: bool = True,
+    fix_bias: bool = True
 ):
     b = einsum(w, v, "... unembed embed1, ... unembed embed2 -> ... unembed embed1 embed2").detach()
-    return 0.5 * (b + b.transpose(-1, -2)) if symmetrize else b
-
+    symmetric = 0.5 * (b + b.transpose(-1, -2)) if symmetrize else b
+    
+    
+    if fix_bias:
+        symmetric[..., :-1, -1] *= 2
+        symmetric[..., -1, :-1] *= 2
+        
+    return symmetric
 
 def make_be(
-    e: Float[Tensor, "... embed input"],
-    w: Float[Tensor, "... unembed embed"], 
-    v: Float[Tensor, "... unembed embed"], 
+    e: Float[Tensor, "... embed features"],
+    b: Float[Tensor, "... unembed embed embed"],
 ):
     e = torch.stack([torch.block_diag(e[i], torch.tensor([1])) for i in range(e.size(0))], dim=0)
-    
-    w_e = einsum(e, w, "... embed input, ... unembed embed -> ... unembed input")
-    v_e = einsum(e, v, "... embed input, ... unembed embed -> ... unembed input")
-    
-    return make_b(w_e, v_e)
+    return einsum(b, e, e, '... unembed embed1 embed2, ... embed1 features1, ... embed2 features2 -> ... unembed features1 features2').detach()
 
 
 def make_ub(
-    w: Float[Tensor, "... unembed embed"], 
-    v: Float[Tensor, "... unembed embed"], 
+    b: Float[Tensor, "... unembed embed embed"],
     u: Float[Tensor, "... output hidden"],
 ):
-    b = make_b(w, v)
     return einsum(b, u, "... unembed embed1 embed2, ... output unembed -> ... output embed1 embed2").detach()
 
 
 def make_ube(
-    e: Float[Tensor, "... embed input"],
-    v: Float[Tensor, "... unembed embed"],
-    w: Float[Tensor, "... unembed embed"],
+    e: Float[Tensor, "... embed features"],
+    b: Float[Tensor, "... unembed embed embed"],
     u: Float[Tensor, "... output unembed"],
 ):
-    be = make_be(e, w, v)
+    be = make_be(e, b)
     return einsum(u, be, "... output unembed, ... unembed input1 input2 -> ... output input1 input2").detach()
     

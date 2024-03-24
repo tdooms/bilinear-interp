@@ -41,6 +41,16 @@ $b^2+b = 0+2$
 
 $(a^2+a) + (b^2+b) + 2ab=2+3 \Rightarrow 2ab = 1$
 
+
+### General Boolean Computation
+In general, given a truth table with entries $t_{00}$, $t_{01}$, $t_{10}$ and $t_{11}$, we can find a closed formula for the optimal weights.
+We achieve this by simply generalizing the above to this general case, we get:
+
+$ \gamma = t_{00}$
+$ a^2 + a = t_{10} - t{00} $
+$ b^2 + b = t_{01} - t{00} $
+$ 2ab = t_{11} - t_{10} - t_{01} -t{00} $
+
 ### Superposition (a)
 
 |$a^2$|$b^2$|$2ab$|$a$|$b$|$\gamma$|out1|out2|

@@ -11,7 +11,7 @@ from shared.projections import *
 
 # %%
 
-cfg = ToyConfig(n_unembed=5, n_outputs=5, n_embed=2, n_features=5, embed='polygon', unembed='identity' seed=None)
+cfg = ToyConfig(n_unembed=5, n_outputs=5, n_embed=2, n_features=5, embed='polygon', unembed='identity')
 model = ToyModel(cfg)
 model.train()[0]
 
@@ -20,18 +20,22 @@ model.train()[0]
 plot_output_interaction(model.be[-1])
 # %%
 inputs, outputs = svd(model.be[-1])
+normed = outputs / torch.linalg.norm(outputs, dim=-1, keepdim=True)
 
-display(px.imshow(outputs, **COLOR))
-display(px.imshow(inputs, facet_col=0, **COLOR, facet_col_wrap=4))
+px.imshow(normed, **COLOR).show()
+px.imshow(inputs, facet_col=0, **COLOR, facet_col_wrap=4).show()
+
 # %%
 # experiment to assess if P * P^T is the same as W * V
-guess = einsum(model.p, model.p, "... e1 f, ... e2 f -> ... f e1 e2")
+guess = einsum(model.e, model.e, "... e1 f, ... e2 f -> ... f e1 e2")
 inputs, outputs = svd(guess[-1])
 
-display(px.imshow(outputs[:-1, :], **COLOR))
+px.imshow(-outputs, **COLOR).show()
 
 # %%
 
-display(px.imshow(model.b[-1], facet_col=0))
-display(px.imshow(guess[-1], facet_col=0))
+px.imshow(model.b[-1], facet_col=0).show()
+px.imshow(guess[-1], facet_col=0).show()
+
+# %%
 

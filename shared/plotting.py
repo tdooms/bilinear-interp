@@ -173,31 +173,35 @@ def plot_input_composition(
     
 
 def plot_svd_decomposition(
-    tensor: Float[Tensor, "output hidden hidden"],
-    proj: Optional[Float[Tensor, "hidden input"]] = None,
+    tensor: Float[Tensor, "unembed embed embed"],
+    e: Optional[Float[Tensor, "embed features"]] = None,
+    u: Optional[Float[Tensor, "unembed output"]] = None,
     title: str = "SVD decomposition",
     height: int = 800,
     **kwargs
 ):
-    outputs = tensor.size(0)
-    features = tensor.size(0) if proj is None else proj.size(1)
-    
-    subplot_titles=["Output", "Interaction"] + [""] * (features-1) + ["Bias", "Constant"]
-    spec = [dict(colspan=1), dict(colspan=features)] + [dict(colspan=1)] * (features + 1)
-    specs = [spec] * outputs
-    fig = make_subplots(rows=outputs, cols=features+3, subplot_titles=subplot_titles, specs=specs, **kwargs)
+    assert len(tensor.shape) == 3, "The tensor must have 3 dimensions"
+    assert len(e.shape) == 2 if e is not None else True, "The embedding tensor must have 2 dimensions"
+    assert len(u.shape) == 2 if u is not None else True, "The unembedding tensor must have 2 dimensions"
     
     flat = rearrange(tensor, 'out i1 i2 -> out (i1 i2)')
-    u, s, v = torch.svd(flat)
+    o, s, v = torch.svd(flat)
 
-    output = u @ torch.diag(s)
+    output = o @ torch.diag(s)
     inputs = rearrange(v, '(i1 i2) out -> out i1 i2', i1=tensor.size(1))
     
-    if proj is not None:
-        inputs = proj.T @ inputs @ proj
-        output = output @ proj[:-1, :-1]
+    inputs = einsum(inputs, e, e, "u e1 e2, e1 f1, e2 f2 -> u f1 f2") if e is not None else inputs
+    output = einsum(output, u, "u e, u o -> e o") if u is not None else output
     
-    for i in range(tensor.size(0)):
+    n_outputs = tensor.size(0) if u is None else u.size(0)
+    n_inputs = inputs.size(0)
+    
+    subplot_titles=["Output", "Interaction"] + [""] * (n_inputs-1) + ["Bias", "Constant"]
+    spec = [dict(colspan=1), dict(colspan=n_inputs)] + [dict(colspan=1)] * (n_inputs + 1)
+    specs = [spec] * n_inputs
+    fig = make_subplots(rows=n_inputs, cols=n_inputs+3, subplot_titles=subplot_titles, specs=specs, **kwargs)
+    
+    for i in range(n_inputs):
         params = dict(coloraxis="coloraxis", name="", hovertemplate="%{y}: %{z:.2f}")
         fig.add_trace(go.Heatmap(z=output[:, i].unsqueeze(1), **params), row=i+1, col=1)
         
@@ -205,24 +209,19 @@ def plot_svd_decomposition(
         fig.add_trace(go.Heatmap(z=inputs[i, :-1, :-1], **params), row=i+1, col=2)
         
         params = dict(coloraxis="coloraxis", name="", hovertemplate="%{y}: %{z:.2f}")
-        fig.add_trace(go.Heatmap(z=inputs[i, :-1, -1:], **params), row=i+1, col=features+2)
+        fig.add_trace(go.Heatmap(z=inputs[i, :-1, -1:], **params), row=i+1, col=n_inputs+2)
         
         params = dict(coloraxis="coloraxis", name="", hovertemplate="%{z:.2f}")
-        fig.add_trace(go.Heatmap(z=inputs[i, -1:, -1:], **params), row=i+1, col=features+3)
+        fig.add_trace(go.Heatmap(z=inputs[i, -1:, -1:], **params), row=i+1, col=n_inputs+3)
 
         fig.update_xaxes(showticklabels=False, tickvals=list(range(inputs.size(1))), row=i+1)
         fig.update_xaxes(showticklabels=True, row=i+1, col=2)
         
-        fig.update_yaxes(showticklabels=False, tickvals=list(range(inputs.size(1))), row=i+1)
-        fig.update_yaxes(showticklabels=False, row=i+1)
-        fig.update_yaxes(showticklabels=True, row=i+1, col=1)
-        
-
-    # for i in range(tensor.size(0)):
+        fig.update_yaxes(showticklabels=False, row=i+1, autorange="reversed")
+        fig.update_yaxes(showticklabels=True, tickvals=list(range(inputs.size(1))), row=i+1, col=2)
+        fig.update_yaxes(showticklabels=True, tickvals=list(range(n_outputs)), row=i+1, col=1)
     
     fig.update_layout(title=title, title_x=0.5, height=height, coloraxis=dict(colorscale="RdBu", cmid=0, cmax=1, cmin=-1))
-    
-
     return fig
 
 
