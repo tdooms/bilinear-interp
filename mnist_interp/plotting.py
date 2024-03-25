@@ -24,7 +24,8 @@ def plot_full_svd_component_for_image(model, svd, svd_comp, idxs,
     LL_idx_pairs = torch.logical_and(idx_pairs[:,0] == bias_idx, idx_pairs[:,1] == bias_idx)
 
     # logit outputs
-    logits = model.linear_out.weight @ svd.U[:,svd_comp]
+    U_S = svd.U[:,svd_comp] * svd.S[svd_comp]
+    logits = model.linear_out.weight @ U_S
 
     # linear images
     L_img = torch.zeros(img_size[0] * img_size[1]).to(device)
@@ -61,7 +62,8 @@ def plot_full_svd_component_for_image(model, svd, svd_comp, idxs,
     plt.subplot(2, topk_eigs + 1, 1)
     plt.bar(classes, logits.cpu().detach().numpy())
     plt.title('Logit Outputs', fontsize=20)
-    plt.xticks(classes)
+    plt.xticks(classes, fontsize=15)
+    plt.yticks(fontsize=15)
     plt.xlabel('Classes', fontsize=18)
     plt.ylabel('Logits', fontsize=18)
 
@@ -69,11 +71,13 @@ def plot_full_svd_component_for_image(model, svd, svd_comp, idxs,
     for i in range(topk_eigs):
         plt.subplot(2, topk_eigs + 1, 1 + (i+1))
         plt.imshow(Q_img[i].reshape(img_size[0], img_size[1]).cpu().detach().numpy(), cmap='RdBu', vmin=-Q_max, vmax=Q_max)
-        plt.title(f'Coeff = {svd.S[svd_comp] * eigvals[i]:.2f}', fontsize=20)
+        plt.title(f'eig = {eigvals[i]:.2f}', fontsize=20)
         plt.xticks([])
         plt.yticks([])
         if i == topk_eigs-1:
-            plt.colorbar()
+            cbar = plt.colorbar()
+            cbar.ax.tick_params(labelsize=14) 
+
 
     # linear term plot
     plt.subplot(2, topk_eigs + 1, topk_eigs + 2)
@@ -81,18 +85,20 @@ def plot_full_svd_component_for_image(model, svd, svd_comp, idxs,
     plt.imshow(L_img.reshape(img_size).cpu().detach().numpy(), cmap='RdBu')
     plt.xticks([])
     plt.yticks([])
-    plt.colorbar()
+    cbar = plt.colorbar()
+    cbar.ax.tick_params(labelsize=14) 
     plt.title('Linear Term', fontsize=20)
 
     # negative eigenvals plot
     for i in range(topk_eigs):
         plt.subplot(2, topk_eigs + 1, topk_eigs + 2 + (i+1))
         plt.imshow(Q_img[topk_eigs + i].reshape(img_size).cpu().detach().numpy(), cmap='RdBu', vmin=-Q_max, vmax=Q_max)
-        plt.title(f'Coeff = {svd.S[svd_comp] * eigvals[topk_eigs + i]:.2f}', fontsize=20)
+        plt.title(f'eig = {eigvals[topk_eigs + i]:.2f}', fontsize=20)
         plt.xticks([])
         plt.yticks([])
         if i == topk_eigs-1:
-            plt.colorbar()
+            cbar = plt.colorbar()
+            cbar.ax.tick_params(labelsize=14) 
 
     plt.figtext(0.05,0.96,f"SVD Component {svd_comp}", va="center", ha="left", size=28)
     plt.figtext(0.6,0.94,"Eigenvectors of Quadratic Weight (Q)", va="center", ha="center", size=24)
