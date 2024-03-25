@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import einops
 import numpy as np
+import copy
 
 class MnistConfig:
     """A configuration class for MNIST models"""
@@ -169,3 +170,90 @@ class MnistModel(nn.Module):
                 scheduler.step()
                 print(f'learning rate = {scheduler.get_last_lr()[0]}')
         _ = self.validation_accuracy(test_loader)
+
+
+class BilinearTopK(torch.nn.Module):
+    def __init__(self, B, requires_grad = False, norm = True):
+        super().__init__()
+        self.B = torch.nn.Parameter(B, requires_grad=requires_grad)
+        self.out = None
+
+        self.norm = norm
+        if norm:
+          self.rms_norm = RmsNorm()
+
+    def forward(self, x):
+        ones =  torch.ones(x.size(0), 1).to(x.device)
+        self.input = torch.cat((x, ones), dim=-1)
+        self.out_prenorm = einops.einsum(self.input, self.B, self.input, 'b d0, d0 d1 s, b d1 -> b s')
+        if self.norm:
+            self.out = self.rms_norm(self.out_prenorm)
+        else:
+            self.out = self.out_prenorm
+        return self.out
+
+class BilinearModelTopK(torch.nn.Module):
+    def __init__(self, V_mats, W_out, bias_out, pixel_idxs, rms_norm = True):
+        super().__init__()
+        self.pixel_idxs = pixel_idxs
+        self.rms_norm = rms_norm
+        self.layers = []
+        for layer, V in enumerate(V_mats):
+            if layer < len(V_mats) - 1:
+                self.layers.append(BilinearTopK(V, rms_norm = rms_norm))
+            else:
+                self.layers.append(BilinearTopK(V, rms_norm = False))
+
+        self.W_out = torch.nn.Linear(*W_out.T.shape)
+        with torch.no_grad():
+          self.W_out.weight = torch.nn.Parameter(W_out).to(device)
+          self.W_out.bias = torch.nn.Parameter(bias_out).to(device)
+
+    def forward(self, x):
+        if self.rms_norm:
+            self.rms_scale = torch.sqrt((x**2).mean(dim=-1, keepdim=True))
+            x = x / self.rms_scale
+        x = self.get_pixels(x)
+        self.input = x
+        for layer in self.layers:
+            x = layer(x)
+        self.logits = self.W_out(x)
+        # no activation and no softmax at the end
+        return self.logits
+
+    def get_pixels(self,x):
+        return x[:,self.pixel_idxs]
+
+
+def get_svd_mats(svds, topKs, pixel_idxs):
+    U_mats = []
+    V_mats = []
+    for idx, svd in enumerate(svds):
+        if idx == 0:
+            d0 = len(pixel_idxs)
+            d = d0
+        else:
+            d0 = top_svd_comps
+            d = topKs[idx-1]
+        K = topKs[idx]
+        V = torch.zeros((d, d, K)).to(device)
+        pair_idxs = torch.tensor(list(itertools.combinations_with_replacement(range(d0),2))).to(device)
+        mask = torch.logical_and(pair_idxs[:,0] < d,pair_idxs[:,1] < d)
+        pair_idxs_reduced = pair_idxs[mask]
+        V_reduced = svd.V[mask]
+        V[pair_idxs_reduced[:,0],pair_idxs_reduced[:,1],:] = V_reduced[:,:K] * svd.S[:K].unsqueeze(0)
+        V[pair_idxs_reduced[:,1],pair_idxs_reduced[:,0],:] = V_reduced[:,:K] * svd.S[:K].unsqueeze(0)
+        U = svd.U[:,:K]
+        U_mats.append(U)
+        V_mats.append(V)
+    return U_mats, V_mats
+
+def get_baseline_model(model, pixel_idxs):
+    topk_model = copy.deepcopy(model)
+    W1 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
+    W1[:,pixel_idxs] = model.layers[0].linear1.weight[:,pixel_idxs]
+    W2 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
+    W2[:,pixel_idxs] = model.layers[0].linear2.weight[:,pixel_idxs]
+    topk_model.layers[0].linear1.weight = torch.nn.Parameter(W1).to(device)
+    topk_model.layers[0].linear2.weight = torch.nn.Parameter(W2).to(device)
+    return topk_model
