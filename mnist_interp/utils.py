@@ -59,13 +59,13 @@ def compute_svds_for_deep_model(model, input_idxs, svd_components, svd_type='sym
             W = layer.linear1.weight
             V = layer.linear2.weight
         else:
-            idxs = torch.arange(svd_components).to(device)
+            idxs = torch.arange(svd_components+1).to(device)
             R = svds[layer_idx-1].U[:,:svd_components]
             if sing_val_type == 'with R':
                 S = svds[layer_idx-1].S[:svd_components]
                 R = R @ torch.diag(S)
-            ones = torch.ones(1, R.shape[1]).to(device)
-            R = torch.cat([R, ones], dim=0)
+            ones = torch.ones(1).to(device)
+            R = torch.block_diag(R, ones)
             W = layer.linear1.weight @ R
             V = layer.linear2.weight @ R
 
@@ -80,17 +80,20 @@ def get_topK_tensors(svds, topK_list, input_idxs, svd_components, sing_val_type)
     R_tensors = []
     for layer_idx, svd in enumerate(svds):
         if layer_idx == 0:
-            num_idxs = len(input_idxs)
-            Q_dim = len(input_idxs)
+            idxs = input_idxs
+            Q_idxs = torch.tensor(input_idxs).to(device)
         else:
-            num_idxs = svd_components
-            Q_dim = topK_list[layer_idx-1]
+            idxs = torch.arange(svd_components+1).to(device)
+            Q_idxs = torch.arange(topK_list[layer_idx-1])
+            Q_idxs = torch.cat([Q_idxs, torch.tensor([svd_components])]).to(device)
         
         topK = topK_list[layer_idx]
-        B = torch.zeros((topK, Q_dim, Q_dim)).to(device)
+        B = torch.zeros((topK, len(Q_idxs), len(Q_idxs))).to(device)
 
-        idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(range(num_idxs),2))).to(device)
-        mask = torch.logical_and(idx_pairs[:,0] < Q_dim, idx_pairs[:,1] < Q_dim)
+        idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(idxs,2))).to(device)
+        mask0 = torch.isin(idx_pairs[:,0], Q_idxs)
+        mask1 = torch.isin(idx_pairs[:,1], Q_idxs)
+        mask = torch.logical_and(mask0, mask1)
         idx_pairs_reduced = idx_pairs[mask]
         if sing_val_type == 'with R':
             Q_reduced = svd.V[mask, :topK]
