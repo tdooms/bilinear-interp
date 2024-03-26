@@ -98,7 +98,7 @@ class MnistModel(nn.Module):
           if self.cfg.activation_type == 'relu':
             layers.append(Relu(input_size, hidden_size, cfg.rms_norm))
           elif self.cfg.activation_type == 'bilinear':
-            layers.append(Bilinear(cfg.input_size, hidden_size, cfg.rms_norm))
+            layers.append(Bilinear(input_size, hidden_size, cfg.rms_norm))
           input_size = hidden_size
 
         self.layers = nn.Sequential(*layers)
@@ -193,27 +193,29 @@ class BilinearTopK(torch.nn.Module):
         return self.out
 
 class BilinearModelTopK(torch.nn.Module):
-    def __init__(self, V_mats, W_out, bias_out, pixel_idxs, rms_norm = True):
+    def __init__(self, B_tensors, W_out, bias_out, input_idxs, norm = True):
         super().__init__()
-        self.pixel_idxs = pixel_idxs
-        self.rms_norm = rms_norm
+        self.input_idxs = input_idxs
+        self.norm = norm
+        if norm:
+          self.rms_norm = RmsNorm()
+
         self.layers = []
-        for layer, V in enumerate(V_mats):
-            if layer < len(V_mats) - 1:
-                self.layers.append(BilinearTopK(V, rms_norm = rms_norm))
+        for layer_idx, B in enumerate(B_tensors):
+            if layer_idx < len(B_tensors) - 1:
+                self.layers.append(BilinearTopK(B, norm = norm))
             else:
-                self.layers.append(BilinearTopK(V, rms_norm = False))
+                self.layers.append(BilinearTopK(B, norm = False))
 
         self.W_out = torch.nn.Linear(*W_out.T.shape)
         with torch.no_grad():
-          self.W_out.weight = torch.nn.Parameter(W_out).to(device)
-          self.W_out.bias = torch.nn.Parameter(bias_out).to(device)
+          self.W_out.weight = torch.nn.Parameter(W_out)
+          self.W_out.bias = torch.nn.Parameter(bias_out)
 
     def forward(self, x):
-        if self.rms_norm:
-            self.rms_scale = torch.sqrt((x**2).mean(dim=-1, keepdim=True))
-            x = x / self.rms_scale
-        x = self.get_pixels(x)
+        if self.norm:
+            x = self.rms_norm(x)
+        x = self.get_input(x)
         self.input = x
         for layer in self.layers:
             x = layer(x)
@@ -221,8 +223,8 @@ class BilinearModelTopK(torch.nn.Module):
         # no activation and no softmax at the end
         return self.logits
 
-    def get_pixels(self,x):
-        return x[:,self.pixel_idxs]
+    def get_input(self,x):
+        return x[:,self.input_idxs]
 
 
 def get_svd_mats(svds, topKs, pixel_idxs):
