@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import einops
 import numpy as np
-import copy
 
 class MnistConfig:
     """A configuration class for MNIST models"""
@@ -82,6 +81,7 @@ class RmsNorm(nn.Module):
         return self.out
 
 class MnistModel(nn.Module):
+    # TODO: make validation and training work for different image inputs
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
@@ -193,24 +193,27 @@ class BilinearTopK(torch.nn.Module):
         return self.out
 
 class BilinearModelTopK(torch.nn.Module):
+    # TODO: make validation_accuracy work for non-image datasets
     def __init__(self, B_tensors, W_out, bias_out, input_idxs, norm = True):
         super().__init__()
         self.input_idxs = input_idxs
+        self.device = W_out.device
         self.norm = norm
         if norm:
           self.rms_norm = RmsNorm()
 
-        self.layers = []
+        layers = []
         for layer_idx, B in enumerate(B_tensors):
             if layer_idx < len(B_tensors) - 1:
-                self.layers.append(BilinearTopK(B, norm = norm))
+                layers.append(BilinearTopK(B, norm = norm))
             else:
-                self.layers.append(BilinearTopK(B, norm = False))
+                layers.append(BilinearTopK(B, norm = False))
+        self.layers = nn.Sequential(*layers)
 
-        self.W_out = torch.nn.Linear(*W_out.T.shape)
+        self.linear_out = torch.nn.Linear(*W_out.T.shape)
         with torch.no_grad():
-          self.W_out.weight = torch.nn.Parameter(W_out)
-          self.W_out.bias = torch.nn.Parameter(bias_out)
+          self.linear_out.weight = torch.nn.Parameter(W_out)
+          self.linear_out.bias = torch.nn.Parameter(bias_out)
 
     def forward(self, x):
         if self.norm:
@@ -219,43 +222,28 @@ class BilinearModelTopK(torch.nn.Module):
         self.input = x
         for layer in self.layers:
             x = layer(x)
-        self.logits = self.W_out(x)
+        self.out = self.linear_out(x)
         # no activation and no softmax at the end
-        return self.logits
+        return self.out
 
     def get_input(self,x):
         return x[:,self.input_idxs]
 
+    def validation_accuracy(self, test_loader, print_acc=True):
+        # In test phase, we don't need to compute gradients (for memory efficiency)
+        with torch.no_grad():
+            n_correct = 0
+            n_samples = 0
+            for images, labels in test_loader:
+                images = images.reshape(-1, 28*28).to(self.device)
+                labels = labels.to(self.device)
+                outputs = self.forward(images)
+                # max returns (value ,index)
+                _, predicted = torch.max(outputs.data, 1)
+                n_samples += labels.size(0)
+                n_correct += (predicted == labels).sum().item()
 
-def get_svd_mats(svds, topKs, pixel_idxs):
-    U_mats = []
-    V_mats = []
-    for idx, svd in enumerate(svds):
-        if idx == 0:
-            d0 = len(pixel_idxs)
-            d = d0
-        else:
-            d0 = top_svd_comps
-            d = topKs[idx-1]
-        K = topKs[idx]
-        V = torch.zeros((d, d, K)).to(device)
-        pair_idxs = torch.tensor(list(itertools.combinations_with_replacement(range(d0),2))).to(device)
-        mask = torch.logical_and(pair_idxs[:,0] < d,pair_idxs[:,1] < d)
-        pair_idxs_reduced = pair_idxs[mask]
-        V_reduced = svd.V[mask]
-        V[pair_idxs_reduced[:,0],pair_idxs_reduced[:,1],:] = V_reduced[:,:K] * svd.S[:K].unsqueeze(0)
-        V[pair_idxs_reduced[:,1],pair_idxs_reduced[:,0],:] = V_reduced[:,:K] * svd.S[:K].unsqueeze(0)
-        U = svd.U[:,:K]
-        U_mats.append(U)
-        V_mats.append(V)
-    return U_mats, V_mats
-
-def get_baseline_model(model, pixel_idxs):
-    topk_model = copy.deepcopy(model)
-    W1 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
-    W1[:,pixel_idxs] = model.layers[0].linear1.weight[:,pixel_idxs]
-    W2 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
-    W2[:,pixel_idxs] = model.layers[0].linear2.weight[:,pixel_idxs]
-    topk_model.layers[0].linear1.weight = torch.nn.Parameter(W1).to(device)
-    topk_model.layers[0].linear2.weight = torch.nn.Parameter(W2).to(device)
-    return topk_model
+            acc = 100.0 * n_correct / n_samples
+            if print_acc:
+              print(f'Accuracy on validation set: {acc} %')
+            return acc
