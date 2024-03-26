@@ -228,7 +228,8 @@ class BilinearModelTopK(torch.nn.Module):
         return self.out
 
     def get_input(self,x):
-        return x[:,self.input_idxs]
+        input_idxs_wo_bias = self.input_idxs[:-1]
+        return x[:,input_idxs_wo_bias]
 
     def validation_accuracy(self, test_loader, print_acc=True):
         # In test phase, we don't need to compute gradients (for memory efficiency)
