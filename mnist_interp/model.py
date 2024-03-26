@@ -176,6 +176,7 @@ class BilinearTopK(torch.nn.Module):
     def __init__(self, B, requires_grad = False, norm = True):
         super().__init__()
         self.B = torch.nn.Parameter(B, requires_grad=requires_grad)
+        self.device = B.device
         self.out = None
 
         self.norm = norm
@@ -183,9 +184,9 @@ class BilinearTopK(torch.nn.Module):
           self.rms_norm = RmsNorm()
 
     def forward(self, x):
-        ones =  torch.ones(x.size(0), 1).to(x.device)
+        ones =  torch.ones(x.size(0), 1).to(self.device)
         self.input = torch.cat((x, ones), dim=-1)
-        self.out_prenorm = einops.einsum(self.input, self.B, self.input, 'b d0, d0 d1 s, b d1 -> b s')
+        self.out_prenorm = einops.einsum(self.input, self.B, self.input, 'b d0, s d0 d1, b d1 -> b s')
         if self.norm:
             self.out = self.rms_norm(self.out_prenorm)
         else:
