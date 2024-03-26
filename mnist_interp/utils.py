@@ -1,5 +1,6 @@
 import torch
 import itertools
+import copy
 from mnist_interp.model import *
 
 def get_pixel_label_mutual_info(train_loader, img_size=(28,28), num_classes = 10):
@@ -106,11 +107,23 @@ def get_topK_tensors(svds, topK_list, input_idxs, svd_components, sing_val_type)
 
         B_tensors.append(B)
         R_tensors.append(R)
+    return B_tensors, R_tensors
 
 def get_topK_model(model, svds, topK_list, input_idxs, svd_components, sing_val_type = 'with R'):
-    B_tensors, R_tensors = get_topK_tensors(svds, topK_list, input_idxs, svd_components)
+    B_tensors, R_tensors = get_topK_tensors(svds, topK_list, input_idxs, svd_components, sing_val_type)
     W_out = model.linear_out.weight @ R_tensors[-1]
     bias_out = model.linear_out.bias
     
     topk_model = BilinearModelTopK(B_tensors, W_out, bias_out, input_idxs)
+    return topk_model
+
+def get_topK_baseline_model(model, input_idxs):
+    topk_model = copy.deepcopy(model)
+    device = model.layers[0].linear1.weight.device
+    W1 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
+    W1[:,input_idxs] = model.layers[0].linear1.weight[:,input_idxs]
+    W2 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
+    W2[:,input_idxs] = model.layers[0].linear2.weight[:,input_idxs]
+    topk_model.layers[0].linear1.weight = torch.nn.Parameter(W1).to(device)
+    topk_model.layers[0].linear2.weight = torch.nn.Parameter(W2).to(device)
     return topk_model
