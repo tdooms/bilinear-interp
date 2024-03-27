@@ -14,6 +14,7 @@ class MnistConfig:
         self.activation_type = 'bilinear'
         self.random_seed = 0
         self.rms_norm = False
+        self.bias = False
     
         # training params
         self.num_epochs = 10
@@ -44,24 +45,28 @@ class Relu(nn.Module):
         return self.out
 
 class Bilinear(nn.Module):
-    def __init__(self, input_size, output_size, norm):
+    def __init__(self, input_size, output_size, norm, bias = False):
         super(Bilinear, self).__init__()
-        self.linear1 = nn.Linear(input_size+1, output_size)
-        self.linear2 = nn.Linear(input_size+1, output_size)
+        self.bias = bias
+        if bias:
+            input_size = input_size + 1
+        self.linear1 = nn.Linear(input_size, output_size)
+        self.linear2 = nn.Linear(input_size, output_size)
         
         scale = np.sqrt(2/(input_size + output_size))
         nn.init.xavier_normal_(self.linear1.weight, gain=scale**(-1/4))
         nn.init.xavier_normal_(self.linear2.weight, gain=scale**(-1/4))
-        nn.init.constant_(self.linear1.bias, 0.5)
-        nn.init.constant_(self.linear2.bias, 0.5)
         
         self.norm = norm
         if norm:
           self.rms_norm = RmsNorm()
         
     def forward(self, x):
-        ones =  torch.ones(x.size(0), 1).to(x.device)
-        self.input = torch.cat((x, ones), dim=-1)
+        if self.bias:
+            ones =  torch.ones(x.size(0), 1).to(x.device)
+            self.input = torch.cat((x, ones), dim=-1)
+        else:
+            self.input = x
         out1 = self.linear1(self.input)
         out2 = self.linear2(self.input)
         self.out_prenorm = out1 * out2
@@ -76,7 +81,7 @@ class RmsNorm(nn.Module):
         super(RmsNorm, self).__init__()
       
     def forward(self, x):
-        self.rms_scale = torch.sqrt((x**2).sum(dim=-1, keepdim=True))
+        self.rms_scale = torch.sqrt((x**2).mean(dim=-1, keepdim=True))
         self.out = x/self.rms_scale
         return self.out
 
@@ -98,7 +103,7 @@ class MnistModel(nn.Module):
           if self.cfg.activation_type == 'relu':
             layers.append(Relu(input_size, hidden_size, cfg.rms_norm))
           elif self.cfg.activation_type == 'bilinear':
-            layers.append(Bilinear(input_size, hidden_size, cfg.rms_norm))
+            layers.append(Bilinear(input_size, hidden_size, cfg.rms_norm, cfg.bias))
           input_size = hidden_size
 
         self.layers = nn.Sequential(*layers)
@@ -173,19 +178,23 @@ class MnistModel(nn.Module):
 
 
 class BilinearTopK(torch.nn.Module):
-    def __init__(self, B, requires_grad = False, norm = True):
+    def __init__(self, B, requires_grad = False, norm = True, bias = False):
         super().__init__()
         self.B = torch.nn.Parameter(B, requires_grad=requires_grad)
         self.device = B.device
         self.out = None
+        self.bias = bias
 
         self.norm = norm
         if norm:
           self.rms_norm = RmsNorm()
 
     def forward(self, x):
-        ones =  torch.ones(x.size(0), 1).to(self.device)
-        self.input = torch.cat((x, ones), dim=-1)
+        if self.bias:
+            ones =  torch.ones(x.size(0), 1).to(self.device)
+            self.input = torch.cat((x, ones), dim=-1)
+        else:
+            self.input = x
         self.out_prenorm = einops.einsum(self.input, self.B, self.input, 'b d0, s d0 d1, b d1 -> b s')
         if self.norm:
             self.out = self.rms_norm(self.out_prenorm)
@@ -195,20 +204,21 @@ class BilinearTopK(torch.nn.Module):
 
 class BilinearModelTopK(torch.nn.Module):
     # TODO: make validation_accuracy work for non-image datasets
-    def __init__(self, B_tensors, W_out, bias_out, input_idxs, norm = True):
+    def __init__(self, B_tensors, W_out, bias_out, input_idxs, norm = True, bias = False):
         super().__init__()
         self.input_idxs = input_idxs
         self.device = W_out.device
         self.norm = norm
         if norm:
           self.rms_norm = RmsNorm()
+        self.bias = bias
 
         layers = []
         for layer_idx, B in enumerate(B_tensors):
             if layer_idx < len(B_tensors) - 1:
-                layers.append(BilinearTopK(B, norm = norm))
+                layers.append(BilinearTopK(B, norm = norm, bias=bias))
             else:
-                layers.append(BilinearTopK(B, norm = False))
+                layers.append(BilinearTopK(B, norm = False, bias=bias))
         self.layers = nn.Sequential(*layers)
 
         self.linear_out = torch.nn.Linear(*W_out.T.shape)
@@ -228,8 +238,11 @@ class BilinearModelTopK(torch.nn.Module):
         return self.out
 
     def get_input(self,x):
-        input_idxs_wo_bias = self.input_idxs[:-1]
-        return x[:,input_idxs_wo_bias]
+        if self.bias:
+            input_idxs = self.input_idxs[:-1]
+        else:
+            input_idxs = self.input_idxs
+        return x[:,input_idxs]
 
     def validation_accuracy(self, test_loader, print_acc=True):
         # In test phase, we don't need to compute gradients (for memory efficiency)
