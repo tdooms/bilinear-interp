@@ -1,3 +1,4 @@
+from numpy import False_
 import torch
 import itertools
 import copy
@@ -80,8 +81,8 @@ def get_topK_tensors(svds, topK_list, input_idxs, svd_components, sing_val_type)
     R_tensors = []
     for layer_idx, svd in enumerate(svds):
         if layer_idx == 0:
-            idxs = input_idxs
-            Q_idxs = torch.tensor(input_idxs).to(device)
+            idxs = input_idxs.clone().to(device)
+            Q_idxs = input_idxs.clone().to(device)
         else:
             idxs = torch.arange(svd_components+1).to(device)
             Q_idxs = torch.arange(topK_list[layer_idx-1])
@@ -98,10 +99,11 @@ def get_topK_tensors(svds, topK_list, input_idxs, svd_components, sing_val_type)
         if sing_val_type == 'with R':
             Q_reduced = svd.V[mask, :topK]
         elif sing_val_type == 'with Q':
-            Q_reduced = svd.V[mask, :topK] @ svd.S[:topK].unsqueeze(0)
+            Q_reduced = svd.V[mask, :topK] @ torch.diag(svd.S[:topK])
     
-        B[:, idx_pairs_reduced[:,0],idx_pairs_reduced[:,1]] = Q_reduced.T
-        B[:, idx_pairs_reduced[:,1],idx_pairs_reduced[:,0]] = Q_reduced.T
+        idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(range(len(Q_idxs)),2))).to(device)
+        B[:, idx_pairs[:,0],idx_pairs[:,1]] = Q_reduced.T
+        B[:, idx_pairs[:,1],idx_pairs[:,0]] = Q_reduced.T
         
         if sing_val_type == 'with R':
             R = svd.U[:,:topK] @ torch.diag(svd.S[:topK])
