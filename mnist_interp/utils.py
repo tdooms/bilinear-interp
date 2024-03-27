@@ -1,6 +1,8 @@
+from numpy import False_
 import torch
 import itertools
-
+import copy
+from mnist_interp.model import *
 
 def get_pixel_label_mutual_info(train_loader, img_size=(28,28), num_classes = 10):
     # TODO: make more generic for non-image inputs
@@ -26,6 +28,13 @@ def get_pixel_label_mutual_info(train_loader, img_size=(28,28), num_classes = 10
     mutual_info = (pixel_on + pixel_off).sum(dim=0)
     return mutual_info
 
+def get_top_pixel_idxs(train_loader, num_pixels, bias_idx = None, **kwargs):
+    mutual_info = get_pixel_label_mutual_info(train_loader)
+    top_mi = mutual_info.topk(num_pixels)
+    pixel_idxs = top_mi.indices.sort().values
+    if bias_idx is not None:
+        pixel_idxs = torch.cat([pixel_idxs, torch.tensor([bias_idx])], dim=0)
+    return pixel_idxs
 
 def compute_symmetric_svd(W, V, idxs, return_B = False):
     device = W.device
@@ -41,3 +50,97 @@ def compute_symmetric_svd(W, V, idxs, return_B = False):
         del B
         if torch.cuda.is_available: torch.cuda.empty_cache()
         return svd
+
+def compute_svds_for_deep_model(model, input_idxs, svd_components, 
+    svd_type='symmetric', sing_val_type='with R', bias = False):
+    
+    device = model.layers[0].linear1.weight.device
+    svds = [None] * len(model.layers)
+    for layer_idx, layer in enumerate(model.layers):
+        if layer_idx == 0:
+            idxs = input_idxs
+            W = layer.linear1.weight
+            V = layer.linear2.weight
+        else:
+            R = svds[layer_idx-1].U[:,:svd_components]
+            if sing_val_type == 'with R':
+                S = svds[layer_idx-1].S[:svd_components]
+                R = R @ torch.diag(S)
+            if bias:
+                idxs = torch.arange(svd_components+1).to(device)
+                ones = torch.ones(1).to(device)
+                R = torch.block_diag(R, ones)
+            else:
+                idxs = torch.arange(svd_components).to(device)
+            W = layer.linear1.weight @ R
+            V = layer.linear2.weight @ R
+
+        if svd_type == 'symmetric':
+            svd = compute_symmetric_svd(W, V, idxs)
+            svds[layer_idx] = svd
+    return svds
+
+def get_topK_tensors(svds, topK_list, input_idxs, svd_components, sing_val_type,
+    bias = False):
+
+    device = svds[0].V.device
+    B_tensors = []
+    R_tensors = []
+    for layer_idx, svd in enumerate(svds):
+        if layer_idx == 0:
+            idxs = input_idxs.clone().to(device)
+            Q_idxs = input_idxs.clone().to(device)
+        else:
+            Q_idxs = torch.arange(topK_list[layer_idx-1]).to(device)
+            if bias:
+                idxs = torch.arange(svd_components+1).to(device)
+                Q_idxs = torch.cat([Q_idxs, torch.tensor([svd_components])]).to(device)
+            else:
+                idxs = torch.arange(svd_components).to(device)
+        
+        topK = topK_list[layer_idx]
+        B = torch.zeros((topK, len(Q_idxs), len(Q_idxs))).to(device)
+
+        idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(idxs,2))).to(device)
+        mask0 = torch.isin(idx_pairs[:,0], Q_idxs)
+        mask1 = torch.isin(idx_pairs[:,1], Q_idxs)
+        mask = torch.logical_and(mask0, mask1)
+        idx_pairs_reduced = idx_pairs[mask]
+        if sing_val_type == 'with R':
+            Q_reduced = svd.V[mask, :topK]
+        elif sing_val_type == 'with Q':
+            Q_reduced = svd.V[mask, :topK] @ torch.diag(svd.S[:topK])
+    
+        idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(range(len(Q_idxs)),2))).to(device)
+        B[:, idx_pairs[:,0],idx_pairs[:,1]] = Q_reduced.T
+        B[:, idx_pairs[:,1],idx_pairs[:,0]] = Q_reduced.T
+        
+        if sing_val_type == 'with R':
+            R = svd.U[:,:topK] @ torch.diag(svd.S[:topK])
+        elif sing_val_type == 'with Q':
+            R = svd.U[:,:topK]
+
+        B_tensors.append(B)
+        R_tensors.append(R)
+    return B_tensors, R_tensors
+
+def get_topK_model(model, svds, topK_list, input_idxs, svd_components, sing_val_type = 'with R'):
+    B_tensors, R_tensors = get_topK_tensors(svds, topK_list, input_idxs, svd_components, 
+                                            sing_val_type, bias=model.cfg.bias)
+    W_out = model.linear_out.weight @ R_tensors[-1]
+    bias_out = model.linear_out.bias
+    
+    topk_model = BilinearModelTopK(B_tensors, W_out, bias_out, input_idxs,
+                                    norm = model.cfg.rms_norm, bias=model.cfg.bias)
+    return topk_model
+
+def get_topK_baseline_model(model, input_idxs):
+    topk_model = copy.deepcopy(model)
+    device = model.layers[0].linear1.weight.device
+    W1 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
+    W1[:,input_idxs] = model.layers[0].linear1.weight[:,input_idxs]
+    W2 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
+    W2[:,input_idxs] = model.layers[0].linear2.weight[:,input_idxs]
+    topk_model.layers[0].linear1.weight = torch.nn.Parameter(W1).to(device)
+    topk_model.layers[0].linear2.weight = torch.nn.Parameter(W2).to(device)
+    return topk_model
