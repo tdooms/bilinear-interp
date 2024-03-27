@@ -50,9 +50,9 @@ class Bilinear(nn.Module):
         self.bias = bias
         if bias:
             input_size = input_size + 1
-        self.linear1 = nn.Linear(input_size, output_size)
-        self.linear2 = nn.Linear(input_size, output_size)
-        
+        self.linear1 = nn.Linear(input_size, output_size, bias = False)
+        self.linear2 = nn.Linear(input_size, output_size, bias = False)
+
         scale = np.sqrt(2/(input_size + output_size))
         nn.init.xavier_normal_(self.linear1.weight, gain=scale**(-1/4))
         nn.init.xavier_normal_(self.linear2.weight, gain=scale**(-1/4))
@@ -81,7 +81,7 @@ class RmsNorm(nn.Module):
         super(RmsNorm, self).__init__()
       
     def forward(self, x):
-        self.rms_scale = torch.sqrt((x**2).mean(dim=-1, keepdim=True))
+        self.rms_scale = torch.sqrt((x**2).sum(dim=-1, keepdim=True))
         self.out = x/self.rms_scale
         return self.out
 
@@ -106,15 +106,14 @@ class MnistModel(nn.Module):
             layers.append(Bilinear(input_size, hidden_size, cfg.rms_norm, cfg.bias))
           input_size = hidden_size
 
-        self.layers = nn.Sequential(*layers)
+        self.layers = nn.ModuleList(layers)
         self.linear_out = nn.Linear(input_size, cfg.num_classes)
 
     def forward(self, x):
         self.input_prenorm = x
         if self.cfg.rms_norm:
-            self.input = self.input_norm(x)
-        else:
-            self.input = x
+            x = self.input_norm(x)
+        self.input = x
 
         for layer in self.layers:
             x = layer(x)
