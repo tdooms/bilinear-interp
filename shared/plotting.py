@@ -67,10 +67,10 @@ def plot_instances_in_nd(
     title: str = "ND Instances",
     cols: int = COLS,
     **kwargs
-): 
+):
     """ This corresponds to the cosine similarity between the hidden dimensions. """
     instances = instances.detach().cpu()
-    
+ 
     normalized = instances / torch.linalg.norm(instances, dim=-2)[:, None, :]
     gram = einsum(normalized, normalized, "i h f1, i h f2 -> i f1 f2")
     
@@ -81,7 +81,7 @@ def plot_instances_in_nd(
 
 def _generate_basis_predictions(model: nn.Module):
     n_features, n_instances = model.cfg.n_features, model.cfg.n_instances
-    
+
     bases = nn.functional.one_hot(torch.arange(n_features), num_classes=n_features)
     bases = repeat(bases.float().to(model.cfg.device), f"x f -> {n_instances} x f")
     bases = rearrange(bases, "i b f -> b i f")
@@ -332,7 +332,7 @@ def plot_output_interaction(
     _ = [fig.add_trace(interaction, row=1, col=1) for interaction in interactions]
     
     params = dict(coloraxis="coloraxis", name="", hovertemplate="%{y}: %{z:.2f}")
-    biases = [go.Heatmap(z=tensor[i, :-1, -1:], **params, visible=i==0) for i in range(outputs)]
+    biases = [go.Heatmap(z=2.0 * tensor[i, :-1, -1:], **params, visible=i==0) for i in range(outputs)]
     _ = [fig.add_trace(bias, row=1, col=4) for bias in biases]
     
     params = dict(coloraxis="coloraxis", name="", hovertemplate="%{z:.2f}")

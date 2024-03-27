@@ -5,7 +5,7 @@ from einops import *
 import plotly.express as px
 
 from shared.plotting import *
-from results.model import *
+from shared.model import *
 
 import math
 

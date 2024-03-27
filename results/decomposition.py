@@ -4,14 +4,14 @@
 # %%
 from dataclasses import dataclass
 
-from results.model import *
+from shared.model import *
 from shared.plotting import *
 from einops import *
-from shared.projections import *
+from shared.embeddings import *
 
 # %%
 
-cfg = ToyConfig(n_unembed=5, n_outputs=5, n_embed=2, n_features=5, embed='polygon', unembed='identity')
+cfg = ToyConfig(n_unembed=5, n_outputs=5, n_embed=2, n_features=5, embed=polygon, unembed=identity)
 model = ToyModel(cfg)
 model.train()[0]
 

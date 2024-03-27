@@ -27,15 +27,9 @@ def make_b(
     w: Float[Tensor, "... unembed embed"], 
     v: Float[Tensor, "... unembed embed"], 
     symmetrize: bool = True,
-    fix_bias: bool = True
 ):
     b = einsum(w, v, "... unembed embed1, ... unembed embed2 -> ... unembed embed1 embed2").detach()
     symmetric = 0.5 * (b + b.transpose(-1, -2)) if symmetrize else b
-    
-    
-    if fix_bias:
-        symmetric[..., :-1, -1] *= 2
-        symmetric[..., -1, :-1] *= 2
         
     return symmetric
 

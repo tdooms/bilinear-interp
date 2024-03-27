@@ -11,9 +11,16 @@ def generate_binary(cfg, probability):
 
 def generate_random(cfg, probability) -> Float[Tensor, "batch_size instances features"]:
         dims = (cfg.batch_size, cfg.n_instances, cfg.n_features)
-        features = torch.rand(dims, device=cfg.device)
+        features = cfg.feature_scale * torch.rand(dims, device=cfg.device)
         mask = torch.rand(dims, device=cfg.device) < probability
         return features * mask
+
+
+def generate_normal(cfg, probability) -> Float[Tensor, "batch_size instances features"]:
+    dims = (cfg.batch_size, cfg.n_instances, cfg.n_features)
+    features = cfg.feature_scale * torch.randn(dims, device=cfg.device).abs()
+    mask = torch.rand(dims, device=cfg.device) < probability
+    return features * mask
 
 
 def generate_correlated(cfg, probability) -> Float[Tensor, "batch_size instances features"]:
