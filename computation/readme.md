@@ -1,4 +1,4 @@
-# Computation in Superposition
+# Binary Computation in Superposition
 **Thomas Dooms (26/03/2024)**
 
 This document studies computation in superposition for bilinear layers. Bilinear layers are especially suited for this task because the internal algorithms of the model can be read out from the weights alone and do not need any input, even not when using multiple layers. This makes reasoning about these tasks especially fruitful because one can predict the exact optimal solution beforehand.
@@ -171,12 +171,16 @@ $bb \cdot y^2 + b \cdot y + \gamma = 0$
 
 $aa \cdot x^2 + bb \cdot y^2 + 2ab \cdot xy + a \cdot x + b \cdot y + \gamma = \max(x, 0) \Rightarrow 2ab \cdot xy = \max(x, 0)$
 
-As this is binary, the best solution is simply $2ab = 1$ (which are the exact same weights as the multiplication). It seems that boolean computation in superposition is not very exiting.
+As this is binary, the best solution is simply $2ab = 1$ (which are the exact same weights as the multiplication). It seems that boolean computation in superposition is not very exiting. I'm not fully sure what to study further here.
 
-
-### Superposition $\odot$ + (WIP)
+### Superposition $\odot$ +
 
 $aa \cdot x^2 + bb \cdot y^2 + 2ab \cdot xy + a \cdot x + b \cdot y + \gamma = \max(x, 0) + \max(y, 0)$
 
-$aa = 0.55$, $bb = 0.55$, $ab = 0.55$, $a=0.5$, $b=0.5$, and $\gamma=0$
+In a dense regime, the best solution is $0.5x + 0.5y + 1$, which is also what the model generates. Deriving this is very similar to the normal superposition case.
 
+However, as the features get sparser, the "best" solution actually changes. The mean of the distribution becomes lower so the constant factor does too, again, just like before, the precision of the constant factor dominates the optimization. Furthermore, the $0.5x + 0.5y$ remain the same from the superposition. The model approximates the residual with the quadratic values, in the sparsest case this is $aa = 0.55$, $bb = 0.55$, $ab = 0.55$, $a=0.5$, $b=0.5$, and $\gamma=0$.
+
+Beyond the somewhat ordinary case where $x$ and $y$ are orthogonal in the hidden dimension and can fully reconstruct (or approximate) the output, there is also the case where we need to compute the sum of two values mapped on the same dimension. This may seem impossible but bilinear layers can leverage their quadratic parameters to still make optimal choices by leveraging distributional priors. Specifically, if $\alpha, \beta \in [-1; 1]$ and $x = 1$, then we know that $\alpha = 1$ and $\beta=0$, otherwise there is no way to get value $1$. In general, $E[\alpha | \alpha - \beta = x] = (x+1)/2$. This means that if $x = 0.9$, we should predict $\alpha = 0.95$ on average. The same holds in the inverse case, if we find $x = -0.9$, we should predict $\beta = 0.95$. In short, there is distributional information that the model can learn to make more informed predictions, even when superposition interferes.
+
+In the sparse case, this results in the model predicting $1.25x^2$. This is close to the best quadratic approximation for $x$ in the interval $[0;1]$. This means that the model predicts a high sum if it sees either a high positive or negative value. In contrary, in the dense case, the model predicts a constant $1$, which is sensible given that it is the sum of the means of those distributions. This highlights the representational power of bilinear layers (at least in toy models). It can learn approximations of arbitrary, complex functions and leverage their symmetry.

@@ -7,12 +7,30 @@ import plotly.express as px
 import plotly.figure_factory as ff
 
 # %%
-cfg = ToyConfig(n_features=2, batch_size=1000)
-probability = 50 ** torch.linspace(0, -1, cfg.n_instances, device=cfg.device).unsqueeze(1)
+x = torch.rand(10000).numpy()
+y = torch.rand(10000).numpy()
 
-batch = generate_random(cfg, probability=probability)
-batch = batch[..., 0] - batch[..., 1]
+mask = torch.rand(10000).numpy() > 0.8
 
-ff.create_distplot([batch[:, 3].numpy()], group_labels=["yo"])
+x = x * mask
+y = y * mask
+
+qs = torch.linspace(-1, 1, 100).numpy()
+
+expected_y_given_q = []
+expected_x_given_q = []
+
+for q in qs:
+    mask = (x - y > q) #& (x - y < q + 0.05)
+    expected_y = np.mean(y[mask])
+    expected_x = np.mean(x[mask])
+    expected_y_given_q.append(expected_y)
+    expected_x_given_q.append(expected_x)
+
+# ff.create_distplot([x - y], group_labels=["x - y"], bin_size=0.01).show()
+
+expected_sum = np.add(expected_y_given_q, expected_x_given_q)
+
+px.scatter(x=qs, y=expected_sum, title="Expected value of sum given q").show()
 
 # %%

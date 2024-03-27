@@ -35,6 +35,6 @@ model.train()[0]
 
 # %%
 
-plot_output_interaction(model.b[5])
+plot_output_interaction(model.b[3])
 
 # %%
