@@ -14,7 +14,7 @@ def create_Q_from_upper_tri_idxs(Q_vec, idxs):
     Q[tril_indices[0],tril_indices[1]] = Q.T[tril_indices[0],tril_indices[1]]
     return Q
 
-def plot_full_svd_component_for_image(model, svd, svd_comp, idxs, 
+def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs, 
     topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10)):
     
     device = svd.V.device
@@ -22,7 +22,7 @@ def plot_full_svd_component_for_image(model, svd, svd_comp, idxs,
 
     # logit outputs
     U_S = svd.U[:,svd_comp] * svd.S[svd_comp]
-    logits = model.linear_out.weight @ U_S
+    logits = W_out @ U_S
 
     # quadratic images
     Q_img = torch.zeros(2 * topk_eigs, img_size[0] * img_size[1]).to(device)
