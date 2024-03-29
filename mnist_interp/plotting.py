@@ -14,10 +14,13 @@ def create_Q_from_upper_tri_idxs(Q_vec, idxs):
     Q[tril_indices[0],tril_indices[1]] = Q.T[tril_indices[0],tril_indices[1]]
     return Q
 
-def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs, 
+def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10)):
     
     device = svd.V.device
+    if idxs is None:
+        idxs = torch.arange(img_size[0] * img_size[1])
+        upper_triangular = False
     idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(idxs,2))).to(device)
 
     # logit outputs
