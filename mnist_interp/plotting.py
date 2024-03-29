@@ -14,8 +14,23 @@ def create_Q_from_upper_tri_idxs(Q_vec, idxs):
     Q[tril_indices[0],tril_indices[1]] = Q.T[tril_indices[0],tril_indices[1]]
     return Q
 
+def plot_B_tensor_image_eigenvectors(B,  idx, **kwargs):
+    class FakeSVD():
+        def __init__(self):
+            device = B.device
+            d = B.shape[0]
+            self.U = torch.eye(d,d).to(device)
+            self.S = torch.ones(d).to(device)
+            self.V = B.T
+    
+    fake_svd = FakeSVD()
+    plot_full_svd_component_for_image(fake_svd, torch.eye(B.shape[0], B.shape[0]), idx, 
+        **kwargs)
+
+
 def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
-    topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10)):
+    topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10),
+    title = 'SVD Component'):
     
     device = svd.V.device
     if idxs is None:
@@ -49,7 +64,8 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     Q_max = 0.9 * Q_img[torch.logical_not(Q_img.isnan())].abs().max()
 
     # subplots
-    plt.subplots(2,topk_eigs+1, figsize=(20,10), dpi=150, layout="compressed",
+    figsize = (4*(topk_eigs+1), 10)
+    plt.subplots(2,topk_eigs+1, figsize=figsize, dpi=150, layout="compressed",
                  width_ratios=[1.05]+topk_eigs*[1], height_ratios=[1, 1]
                 )
 
@@ -87,12 +103,17 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     plt.subplot(2,topk_eigs+1, topk_eigs + 2)
     plt.axis('off')
 
-    plt.figtext(0.05,0.98,f"SVD Component {svd_comp}", va="center", ha="left", size=28)
-    plt.figtext(0.6,0.96,"Eigenvectors of Quadratic Weight (Q)", va="center", ha="center", size=24)
+    plt.figtext(0.05,0.98,f"{title} {svd_comp}", va="center", ha="left", size=28)
+    x = (1 + 0.5 * topk_eigs) / (1 + topk_eigs)
+    plt.figtext(x,0.96,"Eigenvectors", va="center", ha="center", size=24)
+
+
+    
 
 
 def plot_full_svd_component_for_image_with_bias(model, svd, svd_comp, idxs, 
-    topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10)):
+    topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10),
+    title = 'SVD Component'):
     
     device = svd.V.device
     idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(idxs,2))).to(device)
@@ -180,8 +201,8 @@ def plot_full_svd_component_for_image_with_bias(model, svd, svd_comp, idxs,
             cbar = plt.colorbar()
             cbar.ax.tick_params(labelsize=14) 
 
-    plt.figtext(0.05,0.96,f"SVD Component {svd_comp}", va="center", ha="left", size=28)
-    plt.figtext(0.6,0.94,"Eigenvectors of Quadratic Weight (Q)", va="center", ha="center", size=24)
+    plt.figtext(0.05,0.96,f"{title} {svd_comp}", va="center", ha="left", size=28)
+    plt.figtext(0.6,0.94,"Eigenvectors", va="center", ha="center", size=24)
 
 def plot_topk_model_bottleneck(model, svds, topK_list, test_loader, 
     input_idxs, svd_components, sing_val_type, print_bool = False):
