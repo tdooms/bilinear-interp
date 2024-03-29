@@ -37,7 +37,7 @@ def get_top_pixel_idxs(train_loader, num_pixels, bias_idx = None, **kwargs):
         pixel_idxs = torch.cat([pixel_idxs, torch.tensor([bias_idx])], dim=0)
     return pixel_idxs
 
-def compute_symmetric_svd(W, V, idxs = None, return_B = False):
+def get_B_tensor(W,V, idxs = None):
     device = W.device
     with torch.no_grad():
         if idxs is not None:
@@ -48,6 +48,11 @@ def compute_symmetric_svd(W, V, idxs = None, return_B = False):
             B = einops.einsum(W,V, "out in1, out in2 -> out in1 in2").to(device)
             B = 0.5 * B + 0.5 * B.transpose(-2,-1)
             B = einops.rearrange(B, "out in1 in2 -> out (in1 in2)")
+    return B
+
+def compute_symmetric_svd(W, V, idxs = None, return_B = False):
+    B = get_B_tensor(W,V,idxs=idxs)
+    with torch.no_grad():
         svd = torch.svd(B)
     if return_B:
         return svd, B
