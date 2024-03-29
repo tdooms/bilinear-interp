@@ -53,9 +53,10 @@ class Bilinear(nn.Module):
         self.linear1 = nn.Linear(input_size, output_size, bias = False)
         self.linear2 = nn.Linear(input_size, output_size, bias = False)
 
-        scale = np.sqrt(2/(input_size + output_size))
-        nn.init.xavier_normal_(self.linear1.weight, gain=scale**(-1/4))
-        nn.init.xavier_normal_(self.linear2.weight, gain=scale**(-1/4))
+        scale = 0.1 * (np.sqrt(2/(input_size + output_size)))**(-1/4)
+        # scale = 1
+        nn.init.xavier_normal_(self.linear1.weight, gain=scale)
+        nn.init.xavier_normal_(self.linear2.weight, gain=scale)
         
         self.norm = norm
         if norm:
