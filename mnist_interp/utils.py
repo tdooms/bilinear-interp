@@ -1,6 +1,7 @@
 from numpy import False_
 import torch
 import itertools
+import einops
 import copy
 from mnist_interp.model import *
 
@@ -36,13 +37,17 @@ def get_top_pixel_idxs(train_loader, num_pixels, bias_idx = None, **kwargs):
         pixel_idxs = torch.cat([pixel_idxs, torch.tensor([bias_idx])], dim=0)
     return pixel_idxs
 
-def compute_symmetric_svd(W, V, idxs, return_B = False):
+def compute_symmetric_svd(W, V, idxs = None, return_B = False):
     device = W.device
-    idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(idxs,2))).to(device)
-
     with torch.no_grad():
-        B = (1/2) * W[:,idx_pairs[:,0]] * V[:,idx_pairs[:,1]] + \
-            (1/2) * W[:,idx_pairs[:,1]] * V[:,idx_pairs[:,0]]
+        if idxs is not None:
+            idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(idxs,2))).to(device)
+            B = (1/2) * W[:,idx_pairs[:,0]] * V[:,idx_pairs[:,1]] + \
+                (1/2) * W[:,idx_pairs[:,1]] * V[:,idx_pairs[:,0]]
+        else:
+            B = einops.einsum(W,V, "out in1, out in2 -> out in1 in2").to(device)
+            B = 0.5 * B + 0.5 * B.transpose(-2,-1)
+            B = einops.rearrange(B, "out in1 in2 -> out (in1 in2)")
         svd = torch.svd(B)
     if return_B:
         return svd, B
