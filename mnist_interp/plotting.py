@@ -30,7 +30,7 @@ def plot_B_tensor_image_eigenvectors(B,  idx, **kwargs):
 
 def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10),
-    title = 'SVD Component'):
+    title = 'SVD Component', vmax=None):
     
     device = svd.V.device
     if idxs is None:
@@ -78,10 +78,16 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     plt.xlabel('Classes', fontsize=18)
     plt.ylabel('Logits', fontsize=18)
 
+    if vmax is not None:
+        vmax = vmax
+    else:
+        vmax = Q_max
+
     # positive eigenvals plot
     for i in range(topk_eigs):
         plt.subplot(2, topk_eigs + 1, 1 + (i+1))
-        plt.imshow(Q_img[i].reshape(img_size[0], img_size[1]).cpu().detach().numpy(), cmap='RdBu', vmin=-Q_max, vmax=Q_max)
+        
+        plt.imshow(Q_img[i].reshape(img_size[0], img_size[1]).cpu().detach().numpy(), cmap='RdBu', vmin=-vmax, vmax=vmax)
         plt.title(f'eig = {eigvals[i]:.2f}', fontsize=20)
         plt.xticks([])
         plt.yticks([])
@@ -92,7 +98,7 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     # negative eigenvals plot
     for i in range(topk_eigs):
         plt.subplot(2, topk_eigs + 1, topk_eigs + 2 + (i+1))
-        plt.imshow(Q_img[topk_eigs + i].reshape(img_size).cpu().detach().numpy(), cmap='RdBu', vmin=-Q_max, vmax=Q_max)
+        plt.imshow(Q_img[topk_eigs + i].reshape(img_size).cpu().detach().numpy(), cmap='RdBu', vmin=-vmax, vmax=vmax)
         plt.title(f'eig = {eigvals[topk_eigs + i]:.2f}', fontsize=20)
         plt.xticks([])
         plt.yticks([])
@@ -226,6 +232,8 @@ def plot_topk_model_bottleneck(model, svds, topK_list, test_loader,
         topKs = np.array(topK_list)
         acc_drop = 100 * (baseline_accuracy - acc)/baseline_accuracy
         plt.plot(topKs, acc_drop, '-', label=f'Layer {layer}')
+
+    plt.figure(figsize=(5,4))
 
     plt.xlabel('SVD Components')
     plt.ylabel('Accuracy Drop (%)\nCompared to base model')
