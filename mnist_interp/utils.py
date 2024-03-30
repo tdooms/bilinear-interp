@@ -61,7 +61,7 @@ def compute_symmetric_svd(W, V, idxs = None, return_B = False):
         if torch.cuda.is_available: torch.cuda.empty_cache()
         return svd
 
-def compute_svds_for_deep_model(model, input_idxs, svd_components, 
+def compute_svds_for_deep_model(model, svd_components, input_idxs = None,
     svd_type='symmetric', sing_val_type='with R', bias = False):
     
     device = model.layers[0].linear1.weight.device
@@ -86,7 +86,7 @@ def compute_svds_for_deep_model(model, input_idxs, svd_components,
             V = layer.linear2.weight @ R
 
         if svd_type == 'symmetric':
-            svd = compute_symmetric_svd(W, V, idxs)
+            svd = compute_symmetric_svd(W, V, idxs=idxs)
             svds[layer_idx] = svd
     return svds
 
@@ -146,7 +146,7 @@ def get_topK_model(model, svds, topK_list, input_idxs, svd_components, sing_val_
 
 def get_topK_baseline_model(model, input_idxs):
     topk_model = copy.deepcopy(model)
-    device = model.layers[0].linear1.weight.device
+    device = topk_model.cfg.device
     W1 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
     W1[:,input_idxs] = model.layers[0].linear1.weight[:,input_idxs]
     W2 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
@@ -154,3 +154,4 @@ def get_topK_baseline_model(model, input_idxs):
     topk_model.layers[0].linear1.weight = torch.nn.Parameter(W1).to(device)
     topk_model.layers[0].linear2.weight = torch.nn.Parameter(W2).to(device)
     return topk_model
+
