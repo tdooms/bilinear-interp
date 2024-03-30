@@ -52,11 +52,6 @@ class Bilinear(nn.Module):
             input_size = input_size + 1
         self.linear1 = nn.Linear(input_size, output_size, bias = False)
         self.linear2 = nn.Linear(input_size, output_size, bias = False)
-
-        scale = 0.1 * (np.sqrt(2/(input_size + output_size)))**(-1/4)
-        # scale = 1
-        nn.init.xavier_normal_(self.linear1.weight, gain=scale)
-        nn.init.xavier_normal_(self.linear2.weight, gain=scale)
         
         self.norm = norm
         if norm:
@@ -102,13 +97,13 @@ class MnistModel(nn.Module):
         input_size = cfg.input_size
         for idx, hidden_size in enumerate(cfg.hidden_sizes):
           if self.cfg.activation_type == 'relu':
-            layers.append(Relu(input_size, hidden_size, cfg.rms_norm))
+            layers.append(Relu(input_size, hidden_size, cfg.rms_norm).to(cfg.device))
           elif self.cfg.activation_type == 'bilinear':
-            layers.append(Bilinear(input_size, hidden_size, cfg.rms_norm, cfg.bias))
+            layers.append(Bilinear(input_size, hidden_size, cfg.rms_norm, cfg.bias).to(cfg.device))
           input_size = hidden_size
 
         self.layers = nn.ModuleList(layers)
-        self.linear_out = nn.Linear(input_size, cfg.num_classes)
+        self.linear_out = nn.Linear(input_size, cfg.num_classes).to(cfg.device)
 
     def forward(self, x):
         self.input_prenorm = x
@@ -141,7 +136,7 @@ class MnistModel(nn.Module):
             acc = 100.0 * n_correct / n_samples
             if print_acc:
               print(f'Accuracy on validation set: {acc} %')
-            return acc
+        return acc
 
     def train(self, train_loader, test_loader, optimizer=None, scheduler=None):
         if optimizer is None:
@@ -261,4 +256,4 @@ class BilinearModelTopK(torch.nn.Module):
             acc = 100.0 * n_correct / n_samples
             if print_acc:
               print(f'Accuracy on validation set: {acc} %')
-            return acc
+        return acc
