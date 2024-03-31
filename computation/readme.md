@@ -1,4 +1,5 @@
 # Binary Computation in Superposition
+
 **Thomas Dooms (26/03/2024)**
 
 This document studies computation in superposition for bilinear layers. Bilinear layers are especially suited for this task because the internal algorithms of the model can be read out from the weights alone and do not need any input, even not when using multiple layers. This makes reasoning about these tasks especially fruitful because one can predict the exact optimal solution beforehand.
@@ -60,6 +61,8 @@ $aa + a = t_{xy} - t_{xx}$
 
 $bb + b = t_{yx} - t_{xx}$
 
+> TODO: This may be wrong, double check!
+
 $2ab = t_{yy} - t_{xy} - t_{yx} - t_{xx}$
 
 To get a more complex truth table than the ones above, we can combine gates in arbitrary ways. Let's try $t_{xy} = 3 \cdot \text{AND}(x, y) + 2 \cdot \text{OR}(x, y)$
@@ -98,7 +101,7 @@ $aa \cdot x^2 + bb \cdot y^2 + 2ab \cdot xy + a \cdot x + b \cdot y + \gamma \cd
 
 The best solution is $a = 1$ and $b = 1$, all other terms are $0$.
 
-#### Muliplication
+#### Multiplication
 
 $aa \cdot x^2 + bb \cdot y^2 + 2ab \cdot xy + a \cdot x + b \cdot y + \gamma \cdot 1 = x \cdot y$
 

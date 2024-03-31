@@ -8,7 +8,7 @@ import torch
 import itertools
 from torch import Tensor, nn
 from typing import List, Optional, Union
-from jaxtyping import Float
+from jaxtyping import Float, Integer
 
 COLOR = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0)
 COLS = 4
@@ -159,6 +159,32 @@ def plot_pairwise_outputs(
     fig.update_layout(title_x=0.5, title="Pairwise Output Features")
     return set_facet_labels(fig, labels)
 
+
+def plot_radial_interaction(
+    w: Float[Tensor, "output input input"],
+    indices: Optional[Integer[Tensor, "x"]] = None,
+    title: str = "Radial Interactions",
+    **kwargs
+):
+    i, j = 0, 1 if indices is None else indices
+
+    
+    x = repeat(torch.linspace(0, 2*math.pi, 100), f"x -> x {w.size(0)}")
+    sint, cost = x.sin(), x.cos()
+    
+    r = 1
+    # r = (torch.minimum(x.tan().abs(), x.tan().reciprocal().abs()).pow(2) + 1).sqrt()
+
+    # radii = r*w[:, i, i] * cost**2 + r*w[:, j, j] * sint**2 + r * w[:, i, j] * 2*cost*sint + 2*cost * w[:, i, -1] + 2*sint*w[:, j, -1] + w[:, -1, -1]
+    radii = r**2*w[:, i, i] * cost**2 + r**2*w[:, j, j] * sint**2 + r**2 * w[:, i, j] * 2*cost*sint + r*2*cost * w[:, i, -1] + r*2*sint*w[:, j, -1] + w[:, -1, -1]
+    min_v, max_v = radii.min() - 0.5, radii.max() + 0.2
+    
+    fig = go.Figure()
+    for idx in range(w.size(0)):
+        fig.add_trace(go.Scatterpolar(r=radii[:, idx], theta=x[:, idx], mode='lines', thetaunit="radians", name=f"Output {idx}"))
+        fig.update_layout(polar = dict(radialaxis=dict(visible = True, range = [min_v, max_v], tickvals=[0], showticklabels=False, gridwidth=2)))
+    return fig.update_layout(title=title, title_x=0.5)
+    
 
 def plot_input_composition(
     tensor: Float[Tensor, "instance output input input"],

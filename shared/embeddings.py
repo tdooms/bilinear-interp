@@ -8,11 +8,11 @@ def identity(n_embed, n_features, n_instances, device):
     return repeat(proj, f"e f -> {n_instances} e f")
     
     
-def polygon(n_embed, n_features, n_instances, device):
+def polygon(n_embed, n_features, n_instances, device, offset=math.pi/6, scale=1.0):
     assert n_embed == 2, "Only 2D polygons are supported."
     
-    angles = torch.arange(n_features, device=device) * 2 * math.pi / n_features
-    proj = torch.stack((angles.cos(), angles.sin()), dim=0)
+    angles = torch.arange(n_features, device=device) * math.tau / n_features + offset
+    proj = torch.stack((angles.cos() * scale, angles.sin() * scale), dim=0)
     return repeat(proj, f"e f -> {n_instances} e f")
 
 def random_orthogonal(n_embed, n_features, n_instances, device):
