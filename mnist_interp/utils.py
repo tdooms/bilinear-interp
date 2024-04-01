@@ -90,6 +90,14 @@ def compute_svds_for_deep_model(model, svd_components, input_idxs = None,
             svds[layer_idx] = svd
     return svds
 
+def reduce_svds(svds, svd_components):
+    class ReducedSVD():
+        def __init__(self, svd, svd_components):
+            self.U = svd.U[:,:svd_components]
+            self.S = svd.S[:svd_components]
+            self.V = svd.V[:,:svd_components]
+    return [ReducedSVD(svd, svd_components) for svd in svds]
+
 def get_topK_tensors(svds, topK_list, input_idxs, svd_components, sing_val_type,
     bias = False):
 
@@ -146,14 +154,14 @@ def get_topK_model(model, svds, topK_list, input_idxs, svd_components, sing_val_
 
 def get_topK_baseline_model(model, input_idxs):
     topk_model = copy.deepcopy(model)
-    device = topk_model.cfg.device
-    W1 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
+    device = model.layers[0].linear1.weight.device
+    W1 = torch.zeros(*model.layers[0].linear1.weight.shape)
     W1[:,input_idxs] = model.layers[0].linear1.weight[:,input_idxs]
-    W2 = torch.zeros(*model.layers[0].linear1.weight.shape).to(device)
+    W2 = torch.zeros(*model.layers[0].linear1.weight.shape)
     W2[:,input_idxs] = model.layers[0].linear2.weight[:,input_idxs]
-    topk_model.layers[0].linear1.weight = torch.nn.Parameter(W1).to(device)
-    topk_model.layers[0].linear2.weight = torch.nn.Parameter(W2).to(device)
-    return topk_model
+    topk_model.layers[0].linear1.weight = torch.nn.Parameter(W1)
+    topk_model.layers[0].linear2.weight = torch.nn.Parameter(W2)
+    return topk_model.to(device)
 
 def get_max_pos_neg_activations(Q):
     # Q : square matrix for quadratic filter
