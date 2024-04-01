@@ -65,7 +65,7 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
 
     # subplots
     figsize = (4*(topk_eigs+1), 10)
-    plt.subplots(2,topk_eigs+1, figsize=figsize, dpi=150, layout="compressed",
+    plt.subplots(2, topk_eigs+1, figsize=figsize, dpi=150, layout="compressed",
                  width_ratios=[1.05]+topk_eigs*[1], height_ratios=[1, 1]
                 )
 
@@ -112,7 +112,7 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     plt.figtext(0.05,0.98,f"{title} {svd_comp}", va="center", ha="left", size=28)
     x = (1 + 0.5 * topk_eigs) / (1 + topk_eigs)
     plt.figtext(x,0.96,"Eigenvectors", va="center", ha="center", size=24)
-
+    plt.show()
 
     
 
@@ -245,3 +245,26 @@ def plot_topk_model_bottleneck(model, svds, topK_list, test_loader,
     ax.set_yticks([0.1, 1, 10, 100], ['0.1%', '1%', '10%', '100%'])
     ax.set_xticks([1, 2, 5, 10, 20, 50, 100, 300], [1, 2, 5, 10, 20, 50, 100, 300])
     plt.legend()
+
+def plot_max_activations(Q, idxs = None, img_size = (28,28)):
+    device = Q.device
+    if idxs is None:
+        idxs = torch.arange(img_size[0] * img_size[1])
+    x_pos, x_neg, act_pos, act_neg = get_max_pos_neg_activations(Q)
+    
+    plt.subplot(1, 2, 1)
+    max_img = torch.zeros(img_size[0]*img_size[1]).to(device)
+    max_img[:] = float('nan')
+    max_img[idxs] = x_pos
+    max_img = max_img.reshape((img_size[0], img_size[1]))
+    plt.imshow(max_img.cpu().detach().numpy(), cmap='RdBu', vmin=-1, vmax=1)
+    plt.title(f"Max Pos. Activation, a={act_pos:.2f}")
+
+    plt.subplot(1, 2, 2)
+    max_img = torch.zeros(img_size[0]*img_size[1]).to(device)
+    max_img[:] = float('nan')
+    max_img[idxs] = x_neg
+    max_img = max_img.reshape((img_size[0], img_size[1]))
+    plt.imshow(max_img.cpu().detach().numpy(), cmap='RdBu', vmin=-1, vmax=1)
+    plt.title(f"Max Neg. Activation, a={act_neg:.2f}")
+    plt.show()
