@@ -227,13 +227,13 @@ def plot_topk_model_bottleneck(model, svds, topK_list, test_loader,
     topk_baseline_model = get_topK_baseline_model(model, input_idxs)
     baseline_accuracy = topk_baseline_model.validation_accuracy(test_loader, print_acc=False)
 
+
+    plt.figure(figsize=(5,4))
     for layer in range(len(model.layers)):
         acc = np.array(accuracy_dict[layer])
         topKs = np.array(topK_list)
         acc_drop = 100 * (baseline_accuracy - acc)/baseline_accuracy
         plt.plot(topKs, acc_drop, '-', label=f'Layer {layer}')
-
-    plt.figure(figsize=(5,4))
 
     plt.xlabel('SVD Components')
     plt.ylabel('Accuracy Drop (%)\nCompared to base model')
@@ -245,6 +245,7 @@ def plot_topk_model_bottleneck(model, svds, topK_list, test_loader,
     ax.set_yticks([0.1, 1, 10, 100], ['0.1%', '1%', '10%', '100%'])
     ax.set_xticks([1, 2, 5, 10, 20, 50, 100, 300], [1, 2, 5, 10, 20, 50, 100, 300])
     plt.legend()
+
 
 def plot_max_activations(Q, idxs = None, img_size = (28,28)):
     device = Q.device
