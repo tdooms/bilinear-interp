@@ -109,7 +109,7 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     plt.subplot(2,topk_eigs+1, topk_eigs + 2)
     plt.axis('off')
 
-    plt.figtext(0.05,0.98,f"{title} {svd_comp}", va="center", ha="left", size=28)
+    plt.figtext(0.05,0.98,f"{title}", va="center", ha="left", size=28)
     x = (1 + 0.5 * topk_eigs) / (1 + topk_eigs)
     plt.figtext(x,0.96,"Eigenvectors", va="center", ha="center", size=24)
     plt.show()
