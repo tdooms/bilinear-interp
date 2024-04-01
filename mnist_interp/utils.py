@@ -155,3 +155,18 @@ def get_topK_baseline_model(model, input_idxs):
     topk_model.layers[0].linear2.weight = torch.nn.Parameter(W2).to(device)
     return topk_model
 
+def get_max_pos_neg_activations(Q):
+    # Q : square matrix for quadratic filter
+    cfg = MaxActivationConfig()
+
+    model = MaxActivationModel(cfg, Q)
+    model.train()
+    x_pos = model.get_activation()
+    act_pos = model.forward()
+
+    model = MaxActivationModel(cfg, -Q)
+    model.train()
+    x_neg = model.get_activation()
+    act_neg = -1 * model.forward()
+    return x_pos, x_neg, act_pos, act_neg
+
