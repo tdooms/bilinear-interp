@@ -257,3 +257,54 @@ class BilinearModelTopK(torch.nn.Module):
             if print_acc:
               print(f'Accuracy on validation set: {acc} %')
         return acc
+
+class MaxActivationConfig():
+    def __init__(self):
+        self.warmup_epochs = 2
+        self.epochs = 5
+        self.steps = 1000
+        self.lr = 0.1
+        self.lr_decay = .5
+        self.lr_decay_step = 1
+        self.print_log = False
+
+class MaxActivationModel(torch.nn.Module):
+    def __init__(self, cfg, Q):
+        super().__init__()
+        self.cfg = cfg
+        device = Q.device
+        self.x = torch.nn.Parameter(torch.rand(Q.shape[0], device=device), requires_grad=True)
+        with torch.no_grad():
+            self.Q = torch.nn.Parameter(Q, requires_grad=False).to(device)
+
+    def forward(self):
+        act = self.get_activation()
+        return act.T @ self.Q @ act
+
+    def get_activation(self):
+        return torch.sigmoid(self.x)
+
+    def train(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.cfg.lr)
+        linearLR = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, 
+            end_factor=1, total_iters = self.cfg.warmup_epochs)
+        stepLR = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.cfg.lr_decay_step, gamma=self.cfg.lr_decay)
+        scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, schedulers=[linearLR, stepLR], milestones=[self.cfg.warmup_epochs])
+
+        epochs = self.cfg.warmup_epochs + self.cfg.epochs
+        steps = self.cfg.steps
+        for epoch in range(epochs):
+            for step in range(steps):
+
+                # Forward pass
+                output = self.forward()
+                loss = -output
+
+                # Backward and optimize
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            scheduler.step()
+            if self.cfg.print_log:
+                print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}, Learning rate = {learning_rate}')
