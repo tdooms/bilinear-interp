@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from shared.model import *
 from shared.plotting import *
 from einops import *
-from shared.embeddings import *
+from shared.projections import *
 
 # %%
 

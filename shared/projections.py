@@ -3,13 +3,23 @@ import math
 import numpy as np
 from einops import repeat
 
+
+def extend_to_fit(projection, n_features):
+    *n_batch, n_out, n_in = projection.size()
+    
+    if projection.size(1) < n_features:
+        zeros = torch.zeros(*n_batch, n_out, n_features - n_in, device=projection.device)
+        projection = torch.cat([projection, zeros], dim=-1)
+    return projection
+
 def identity(n_embed, n_features, n_instances, device):
     proj = torch.eye(n_embed, n_features, device=device)
     return repeat(proj, f"e f -> {n_instances} e f")
     
-    
-def polygon(n_embed, n_features, n_instances, device, offset=math.pi/6, scale=1.0):
+def polygon(n_embed, n_features, n_instances, device, offset=math.pi/6, scale=1.0, override_features=None):
     assert n_embed == 2, "Only 2D polygons are supported."
+    
+    n_features = override_features if override_features is not None else n_features
     
     angles = torch.arange(n_features, device=device) * math.tau / n_features + offset
     proj = torch.stack((angles.cos() * scale, angles.sin() * scale), dim=0)

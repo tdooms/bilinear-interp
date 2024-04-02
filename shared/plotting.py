@@ -89,18 +89,22 @@ def _generate_basis_predictions(model: nn.Module):
     return model.forward(bases).detach().cpu()
 
 
-def plot_basis_predictions(model: nn.Module, **kwargs):
+def plot_basis_predictions(model: nn.Module, output=None, **kwargs):
     predictions = _generate_basis_predictions(model)
     labels=dict(y="Instance", x="Prediction")
     
-    fig = px.imshow(predictions, facet_col=0, labels=labels, aspect='auto', **COLOR, **kwargs)
+    if output:
+        fig = px.imshow(predictions[:, output], labels=labels, aspect='auto', **COLOR, **kwargs)
+    else:
+        fig = px.imshow(predictions, facet_col=0, labels=labels, aspect='auto', **COLOR, **kwargs)
     return set_facet_labels(fig, default="Feature")
 
 
 # TODO: this is a dumb way to do this, it's probably also wrong
 def plot_feature_capacity(model: nn.Module):
     predictions = _generate_basis_predictions(model)
-    n_instances, n_features = model.cfg.n_instances, model.cfg.n_features
+    n_instances = model.cfg.n_instances
+    n_features = model.cfg.n_features
     
     fig = make_subplots(n_instances, 1)
     fig.update_layout(barmode='stack')

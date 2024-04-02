@@ -1,15 +1,13 @@
 import torch
 from torch import nn
 from einops import *
-import plotly.express as px
-from tqdm import tqdm
 from dataclasses import dataclass
 from typing import Optional
 
 from shared import trainer
 from shared.features import *
 from shared.tensors import *
-from shared.embeddings import *
+from shared.projections import *
 
 @dataclass
 class ToyConfig:
@@ -61,7 +59,7 @@ class ToyModel(nn.Module):
             self.e = nn.Parameter(nn.init.xavier_normal_(e))
         else:
             self.e = cfg.embed(cfg.n_embed, cfg.n_features, cfg.n_instances, cfg.device)
-            
+        
         if cfg.unembed is None:
             u = torch.empty((cfg.n_instances, cfg.n_outputs, cfg.n_unembed), device=cfg.device)
             self.u = nn.Parameter(nn.init.xavier_normal_(u))

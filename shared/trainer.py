@@ -3,6 +3,7 @@ from tqdm import tqdm
 from plotly import express as px
 from einops import *
 
+
 def simple(model, cfg, per_instance=True):
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, cfg.n_epochs)
@@ -23,13 +24,15 @@ def simple(model, cfg, per_instance=True):
         optimizer.step()
         scheduler.step()
 
+    history = torch.stack(history).detach()
+    
     if per_instance:
-        history = torch.stack(history).detach().cpu().flatten()
+        flattened = history.cpu().flatten()
         x = repeat(torch.arange(cfg.n_epochs), "p -> p i", i=cfg.n_instances).flatten()
         color = repeat(torch.arange(cfg.n_instances), "i -> p i", p=cfg.n_epochs).flatten()
-        fig = px.scatter(y=history, x=x, color=color, log_y=True, labels=dict(x="Epoch", y="Loss"), color_continuous_scale='Viridis')
+        fig = px.scatter(y=flattened, x=x, color=color, log_y=True, labels=dict(x="Epoch", y="Loss"), color_continuous_scale='Viridis')
     else:
-        history = torch.stack(history).detach().cpu().sum(1)
+        summed = history.cpu().sum(1)
         x = torch.arange(cfg.n_epochs)
-        fig = px.scatter(y=history, x=x, log_y=True, labels=dict(x="Epoch", y="Loss"))
+        fig = px.scatter(y=summed, x=x, log_y=True, labels=dict(x="Epoch", y="Loss"))
     return fig, history
