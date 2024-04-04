@@ -94,7 +94,7 @@ def plot_basis_predictions(model: nn.Module, output=None, **kwargs):
     labels=dict(y="Instance", x="Prediction")
     
     if output:
-        fig = px.imshow(predictions[:, output], labels=labels, aspect='auto', **COLOR, **kwargs)
+        fig = px.imshow(predictions[output], labels=labels, aspect='auto', **COLOR, **kwargs)
     else:
         fig = px.imshow(predictions, facet_col=0, labels=labels, aspect='auto', **COLOR, **kwargs)
     return set_facet_labels(fig, default="Feature")
