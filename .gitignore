@@ -1,1 +1,8 @@
-__pycache__/*
+__pycache__
+shared/__pycache__
+stories/__pycache__
+components/__pycache__
+superposition/__pycache__
+
+_checkpoints
+wandb

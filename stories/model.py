@@ -1,22 +1,16 @@
 
 import torch
-import pandas as pd
 from torch import nn
 from torch.nn.functional import scaled_dot_product_attention
 from einops import *
-from dataclasses import dataclass
 from transformers.modeling_outputs import CausalLMOutput
-from transformers import PretrainedConfig, PreTrainedModel, GenerationMixin, GenerationConfig
-from typing import Optional
-import math
+from transformers import PretrainedConfig, PreTrainedModel
 
 
-# https://huggingface.co/docs/transformers/en/custom_models
-
-class Config(PretrainedConfig, GenerationConfig):
+class Config(PretrainedConfig):
     def __init__(
         self,
-        n_vocab: Optional[int] = None,
+        n_vocab = None,
         n_head: int = 4,
         n_layer: int= 4,
         n_ctx: int = 512,
@@ -27,7 +21,7 @@ class Config(PretrainedConfig, GenerationConfig):
         mlp_dropout: float = 0.0,
         embed_dropout: float = 0.0,
         bilinear: bool = True,
-        norm: str = 'rms',
+        rms: bool = True,
         **kwargs
     ):
         self.n_vocab = n_vocab
@@ -41,10 +35,10 @@ class Config(PretrainedConfig, GenerationConfig):
         self.mlp_dropout = mlp_dropout
         self.embed_dropout = embed_dropout
         self.bilinear = bilinear
-        self.norm = norm
+        self.rms = rms
         
         super().__init__(**kwargs)
-        
+
 
 class Attention(nn.Module):
     def __init__(self, cfg) -> None:
@@ -96,6 +90,20 @@ class MLP(nn.Module):
         return self.dropout(self.o(self.gelu(self.w(x))))
 
 
+class RMSNorm(nn.Module):
+    def __init__(self, dims):
+        super().__init__()
+        
+        self.alpha = nn.Parameter(torch.zeros(dims))
+        # This is a very strange bug, HuggingFace models don't like when this variable is called gamma
+        self.weight = nn.Parameter(torch.ones(dims))
+        # self.gamma = nn.Parameter(torch.ones(dims))
+        self.eps = 1e-8
+    
+    def forward(self, x):
+        return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.weight + self.alpha
+    
+
 class Layer(nn.Module):
     def __init__(self, cfg) -> None:
         super().__init__()
@@ -103,33 +111,33 @@ class Layer(nn.Module):
         self.attn = Attention(cfg)
         self.mlp = BLP(cfg) if cfg.bilinear else MLP(cfg)
         
-        self.n1 = nn.LayerNorm(cfg.d_model)
-        self.n2 = nn.LayerNorm(cfg.d_model)
+        self.n1 = RMSNorm(cfg.d_model) if cfg.rms else nn.LayerNorm(cfg.d_model)
+        self.n2 = RMSNorm(cfg.d_model) if cfg.rms else nn.LayerNorm(cfg.d_model)
     
     def forward(self, x):
         x = x + self.attn(self.n1(x))
         x = x + self.mlp(self.n2(x))
         return x
-    
 
-class Transformer(PreTrainedModel, GenerationMixin):
-    def __init__(self, cfg):
-        super().__init__(cfg)
+
+class Transformer(PreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
         
         self.transformer = nn.ModuleDict(dict(
-            wte = nn.Embedding(cfg.n_vocab, cfg.d_model),
-            wpe = nn.Embedding(cfg.n_ctx, cfg.d_model),        
-            drop = nn.Dropout(cfg.embed_dropout),
-            h = nn.ModuleList([Layer(cfg) for _ in range(cfg.n_layer)]),
-            ln_f = nn.LayerNorm(cfg.d_model)
+            wte = nn.Embedding(config.n_vocab, config.d_model),
+            wpe = nn.Embedding(config.n_ctx, config.d_model),        
+            drop = nn.Dropout(config.embed_dropout),
+            h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
+            ln_f = RMSNorm(config.d_model) if config.rms else nn.LayerNorm(config.d_model)
         ))
         
-        self.lm_head = nn.Linear(cfg.d_model, cfg.n_vocab, bias=False)
+        self.lm_head = nn.Linear(config.d_model, config.n_vocab, bias=False)
         self.criterion = nn.CrossEntropyLoss()
         
         # Haven't studied this, it reduces the loss from ~1.8 to ~1.7 on 10% training data.
         self.apply(self._init_weights)
-    
+
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
@@ -137,8 +145,8 @@ class Transformer(PreTrainedModel, GenerationMixin):
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            
-    def forward(self, input_ids, attention_mask=None, labels=None, **kwargs):
+
+    def forward(self, input_ids, labels=None, **kwargs):
         pos = torch.arange(0, input_ids.size(1), dtype=torch.long, device=input_ids.device)
 
         embed = self.transformer.wte(input_ids) + self.transformer.wpe(pos)
@@ -157,39 +165,3 @@ class Transformer(PreTrainedModel, GenerationMixin):
             shifted_labels = labels[..., 1:].contiguous()
             loss = self.criterion(shifted_logits.view(-1, logits.size(-1)), shifted_labels.view(-1))
             return CausalLMOutput(loss=loss, logits=logits)
-    
-    def get_summary(self):
-        params = {
-            "token embedding": self.transformer.wte.weight.numel(),
-            "position embedding": self.transformer.wpe.weight.numel(),
-            "unembedding": self.lm_head.weight.numel(),
-            "attn.qkv": self.transformer.h[0].attn.qkv.weight.numel(),
-            "attn.out": self.transformer.h[0].attn.o.weight.numel(),
-            "mlp.bilinear": self.transformer.h[0].mlp.w.weight.numel(),
-            "mlp.out": self.transformer.h[0].mlp.o.weight.numel()
-        }
-        
-        params = {key: f"{val:,}" for key, val in params.items()}
-        
-        total = sum(p.numel() for p in self.parameters())
-        return pd.DataFrame.from_dict(params, orient='index', columns=["params"]), total
-    
-    @torch.no_grad()
-    def generate(self, input_ids, max_length, temperature=1.0, top_k=None):
-        for _ in range(max_length):
-            # forward the model to get the logits for the index in the sequence
-            logits = self(input_ids).logits
-            # pluck the logits at the final step and scale by desired temperature
-            logits = logits[:, -1, :] / temperature
-            # optionally crop the logits to only the top k options
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float('Inf')
-            # apply softmax to convert logits to (normalized) probabilities
-            probs = torch.nn.functional.softmax(logits, dim=-1)
-            # sample from the distribution
-            next_id = torch.multinomial(probs, num_samples=1)
-            # append sampled index to the running sequence and continue
-            input_ids = torch.cat((input_ids, next_id), dim=1)
-
-        return input_ids

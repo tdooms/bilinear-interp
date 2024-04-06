@@ -27,30 +27,35 @@ A bilinear map is not so different, it takes in two vectors and returns a vector
 - The mathematical properties of a bilinear map are comparable to ordinary (scalar) multiplication. Multiplication takes in two numbers and returns another and each of the inputs is linear if we freeze the other.
 
 Importantly, while bilinear maps are linear to their inputs if the other is frozen, it is not linear in general. For instance, scalar multiplication is quadratic ($s(x, x) = x^2$). That said, let's get a bit into the weeds of the maths behind bilinear layers. A linear map $m$ satisfies the following properties:
-$$ m(\vec{u} + \vec{v}) = m(\vec{u}) + m(\vec{v})$$
-$$ m(\lambda \vec{u}) = \lambda m(\vec{u})$$
+$$m(\vec{u} + \vec{v}) = m(\vec{u}) + m(\vec{v})$$
+$$m(\lambda \vec{u}) = \lambda m(\vec{u})$$
 Where $\vec{u}$ and $\vec{v}$ are arbitrary vectors and $\lambda$ a scalar. These properties should feel quite natural, intuitively, it is possible to "pull out" any term out of the map. These maps mostly operate like normal numbers that everyone is used to work with. In contrast a bilinear map has the slightly more complicated constraints.
-$$ b(\lambda \vec{u}, \vec{v}) = \lambda b(\vec{u}, \vec{v}) \text{ and } b(\vec{u}, \lambda \vec{v}) = \lambda b(\vec{u}, \vec{v})$$
-$$ b(\vec{u_1} + \vec{u_2}, \vec{v}) = b(\vec{u_1}, \vec{v}) + b(\vec{u_2}, \vec{v}) \text{ and } b(\vec{u}, \vec{v_1} + \vec{v_2}) = b(\vec{u}, \vec{v_1}) + b(\vec{u}, \vec{v_2})$$
+$$b(\lambda \vec{u}, \vec{v}) = \lambda b(\vec{u}, \vec{v}) \text{ and } b(\vec{u}, \lambda \vec{v}) = \lambda b(\vec{u}, \vec{v})$$
+$$b(\vec{u_1} + \vec{u_2}, \vec{v}) = b(\vec{u_1}, \vec{v}) + b(\vec{u_2}, \vec{v}) \text{ and } b(\vec{u}, \vec{v_1} + \vec{v_2}) = b(\vec{u}, \vec{v_1}) + b(\vec{u}, \vec{v_2})$$
 This may seem very arbitrary at first but if you squint a bit, you can see that if you ignore the $\vec{v}$ in the left equations, this is identical to the linear case.
+
 ### Bilinear Layers
 A normal layer in a neural network is structured as follows.
 $$h_{i+1} = ReLU(W_i h_i + b_i)$$
 We will study the following structure.
 $$h_{i+1} = (W_i h_i + b_i) \odot (V_i h_i + c_i)$$
 Here, $W_i$ and $V_i$ are matrices of the same dimensionality and $b_i$ and $c_i$ are biases. The $\odot$ denotes an element-wise product. The astute reader will probably notice that this is not at all a bilinear map; the biases make this non linear. However, without biases we cannot represent potentially essential operations such as the identity operation (seriously, try this if you don't believe me). In a further section we will solve this to have the best of both worlds. As lightly covered in the intro, there are a handful of reasons for studying this structure. 
-##### 1) Linearizability
+#### 1) Linearizability
 Just as linear maps can be represented as a matrix, bilinear maps can be represented as a tensor. A matrix is simply a rank 2 tensor (sometimes called a 1-1 tensor, meaning 1 input dim and 1 output dim). 
 To describe bilinear maps, we need a rank 3 tensor (2 input dim and 1 output dim). While this tensor can become quite large, we can still employ very simple techniques to analyse this.
 
-> I can't stress enough how important this is! We have a single mathematical object that represents the full computation of a layer. The main issue with a ReLU is that it requires to know the input to determine the output, which makes it extremely hard to define guarantees. Furthermore, the normal weight matrix is impossible to study because the ReLU may just change things around. This single object makes it possible to definitively make guarantees about behaviour and extract algorithms without ever evaluating the (single-layer) network.
-##### 2) Foldability
-Its possible to integrate normal linear maps (such as an embedding/projection or unembedding/classifier) into the abovementioned tensor. In essence, this allows us to create a tensor that encapsulates the exact computation of 3 full layers at once.
-##### 3) Capability
-Bilinear layers with biases can represent a large category of interactions between features, every quadratic function with 2 inputs to be precise. This allows them to exactly compute any kind of binary gate (yes even XORs) in a single layer. They can even approximate arbitrary ternary operations to a high degree. The representational capacity of this operation is honestly breathtaking.
+> I can't stress enough how important this is! We have a single mathematical object that represents the full computation of a layer. The main issue with a ReLU is that it requires to know the input to determine the output, which makes it extremely hard to define guarantees, this is completely obviated with this approach. Furthermore, the normal weight matrix is impossible to study because the ReLU may just change things around. This single object makes it possible to definitively make guarantees about behaviour and extract algorithms without ever evaluating the (single-layer) network.
+
+#### 2) Foldability
+Its possible to integrate normal linear maps (such as an embedding/projection or unembedding/classifier) into the abovementioned tensor. In essence, this allows us to create a tensor that encapsulates the exact computation of 3 full layers at once. In transformers, this makes it incredibly easy to compute exact Q, K, and V compositions.
+
+#### 3) Capability
+Bilinear layers with biases can represent a large category of interactions between features, every quadratic function with 2 inputs to be precise. This allows them to exactly compute any kind of binary gate (yes, even XORs) in a single layer. They can even approximate arbitrary ternary operations to a high degree. The representational capacity of this operation is honestly breathtaking.
+
 ## Motivation & Goals
 Hopefully, by now the reader is convinced that this research direction merits exploration. The main goal of this project is to fully understand small networks that only use bilinear layers. We do so by studying different settings in an attempt to find the best interpretability methods. Intuitively, we aim to solve the most fundamental challenge in mechanistic interpretability; fully understand a high-dimensional linear object. To achieve this, we are currently pursuing two threads of research.
-##### Low Dimensional
+
+### Low Dimensional
 Studying low-dimension toy models allows us to design interpretability techniques in a controlled environment (where the ground truth is known) to evaluate which approaches work best. This provides us with the building blocks on how these novel layers operate. The following is a simplified TODO list.
 
 - **Find the best layer composition to study.**
