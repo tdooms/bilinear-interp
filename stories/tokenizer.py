@@ -6,7 +6,9 @@ from tokenizers.trainers import WordPieceTrainer
 from tokenizers.pre_tokenizers import Whitespace, Digits, Punctuation
 from tokenizers.normalizers import NFD, StripAccents, Lowercase, Replace
 from datasets import load_dataset
-from transformers import PreTrainedTokenizerFast
+from transformers import PreTrainedTokenizerFast, AutoTokenizer
+
+import plotly.express as px
 
 
 # %%
@@ -37,3 +39,14 @@ tokenizer.decode(toks)
 # %%
 
 PreTrainedTokenizerFast(tokenizer_file=f"stories-{vocab_size}.json").push_to_hub(f"TinyStories-{vocab_size}-uncased")
+
+# %%
+
+dataset = load_dataset("tdooms/TinyStories", split="train[:128]")
+
+tokenizer = AutoTokenizer.from_pretrained("tdooms/TinyStories-4096-uncased", pad_token="[PAD]")
+
+out = tokenizer(dataset["text"])
+
+print(sum(len(o) for o in out["input_ids"]) / len(out["input_ids"]))
+px.histogram([len(o) for o in out["input_ids"]], nbins=100).show()

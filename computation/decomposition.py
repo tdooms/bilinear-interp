@@ -13,7 +13,7 @@ import math
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 
-from superposition.model import *
+from compression.model import *
 from shared.plotting import *
 from shared.tensors import *
 

@@ -9,7 +9,7 @@ from einops import *
 import plotly.express as px
 import itertools
 
-from superposition.model import *
+from compression.model import *
 from shared.plotting import *
 
 # %%

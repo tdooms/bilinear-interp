@@ -22,6 +22,7 @@ class Config(PretrainedConfig):
         embed_dropout: float = 0.0,
         bilinear: bool = True,
         rms: bool = True,
+        bias = True,
         **kwargs
     ):
         self.n_vocab = n_vocab
@@ -36,6 +37,7 @@ class Config(PretrainedConfig):
         self.embed_dropout = embed_dropout
         self.bilinear = bilinear
         self.rms = rms
+        self.bias = bias
         
         super().__init__(**kwargs)
 
@@ -67,13 +69,13 @@ class BLP(nn.Module):
     def __init__(self, cfg) -> None:
         super().__init__()
         
-        self.w = nn.Linear(cfg.d_model, 2*cfg.d_hidden)
+        self.w = nn.Linear(cfg.d_model, 2*cfg.d_hidden, bias=cfg.bias)
         self.o = nn.Linear(cfg.d_hidden, cfg.d_model, bias=False)
         self.dropout = nn.Dropout(cfg.mlp_dropout)
         
     def forward(self, x):
         left, right = self.w(x).chunk(2, dim=-1)
-        return self.o(left * right)
+        return self.dropout(self.o(left * right))
 
 
 class MLP(nn.Module):
@@ -126,7 +128,7 @@ class Transformer(PreTrainedModel):
         
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.n_vocab, config.d_model),
-            wpe = nn.Embedding(config.n_ctx, config.d_model),        
+            wpe = nn.Embedding(config.n_ctx, config.d_model),
             drop = nn.Dropout(config.embed_dropout),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
             ln_f = RMSNorm(config.d_model) if config.rms else nn.LayerNorm(config.d_model)

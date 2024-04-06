@@ -34,12 +34,15 @@ w_b = torch.block_diag(w, torch.tensor(1, device="cuda"))
 v_b = torch.block_diag(v, torch.tensor(1, device="cuda"))
 
 w_b[:-1, -1] = b
-v_b[:-1, -1] = c
+v_b[:-1, -1] = c + 1
+w_b = w_b + torch.eye(w_b.size(0), device="cuda")
 
 e_b = torch.block_diag(e, torch.tensor(1, device="cuda"))
 u_b = torch.block_diag(u, torch.tensor(1, device="cuda"))
 
 # print(w_b.shape, v_b.shape, e_b.shape, u_b.shape)
+
+
 
 b = make_b(w_b, v_b)
 ube = make_ube(e_b.T, b, u_b.T)

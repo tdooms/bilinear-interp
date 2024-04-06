@@ -124,11 +124,11 @@ Importantly, as each of these described tensors is rank 3, **every** analysis te
 The importance of biases lie in their independence of the input. In extreme cases, such as a completely zero input, a matrix is not able to produce anything else than this zero vector. However, this independence from the input is also what makes biases slightly annoying to deal with.
 
 Fortunately, we can use a trick: make the bias actually depend on a part of the input and ensure that this part is constant. Practically speaking, if a constant one is appended to the input vector and an extra row is added to the weight matrix, the elements in this row act as biases. In essence, a bias is just an ordinary weight multiplied by a constant one. Formulaically, we get:
-$$
-\begin{bmatrix} h_0 \\ h_1 \\ 1 \end{bmatrix}^T
+
+$$\begin{bmatrix} h_0 \\ h_1 \\ 1 \end{bmatrix}^T
 \cdot
-\begin{bmatrix} W_{00} & W_{01}\\ W_{10} & W_{11} \\ b_0 & b_1 \end{bmatrix}
-$$
+\begin{bmatrix} W_{00} & W_{01}\\ W_{10} & W_{11} \\ b_0 & b_1 \end{bmatrix}$$
+
 If expanded, this results in the following, which is obviously identical to using normal biases.
 $$h_0 \cdot W_{00} + h_0 \cdot W_{10} + 1 \cdot b_0 \text{ and } h_1 \cdot W_{01} + h_1 \cdot W_{11} + 1 \cdot b_1$$
 Back to the bilinear setting, we apply this technique to both sides. Now, a network can learn identity functions using the following weights $(I \cdot h + \vec{0}) \odot (O \cdot h + \vec{1})$ where $I$ and $O$ are the identity and zero matrix respectively.
@@ -136,33 +136,27 @@ Back to the bilinear setting, we apply this technique to both sides. Now, a netw
 > This procedure can actually be done in sequence; by also adding an additional row with a constant on at the end, this constant can be effortlessly propagated through the network to calculate all biases. While the alternative solution of always re-concatenating this constant may seem appealing, it will cause trouble when folding matrices.
 
 ### Feature Interactions
-Let's decompose what the network can learn a bit more formally. This can be done by distributing over the elementwise product. We can see 3 forms of interactions which determine the output of the layer.
+Let's decompose what the network can learn a bit more formally. This can be done by distributing over the element-wise product. We can see 3 forms of interactions which determine the output of the layer.
 $$(Wh + b) \odot (Vh + c) = Wh \odot Vh + Wh \odot c + b \odot Vh + b \odot c$$
 **Constant.** Starting at the simple case of bias-bias ($b \odot c$), this is simply the product of both sides, it is completely independent of the input and therefore called the *constant* component.
 
-**Linear.** The next case are the linear interactions ($Wh \odot c + b \odot Vh$). In the general case, this can happen for either side of the input but in our case this boils down to the same (as we will exploit a bit later). 
+**Linear.** The next case are the linear interactions ($Wh \odot c + b \odot Vh$). In the general case, this can happen for either side of the input but in our case this boils down to the same (as we will exploit a bit later).
 
 **Quadratic.** Lastly, we have the quadratic interactions ($Wh \odot Vh$). These interactions happen between any of the input pairs, this becomes clear if we write out the formula. Given input $[x, y]$, this term becomes.
 
-$$
-(W \cdot \begin{bmatrix} x \\ y \end{bmatrix}) \odot (V \cdot \begin{bmatrix} x \\ y \end{bmatrix}) 
-= \begin{bmatrix} x \cdot W_{00} + y \cdot W_{10} \\ x \cdot W_{01} + y \cdot W_{11} \end{bmatrix} \odot \begin{bmatrix} x \cdot V_{00} + y \cdot V_{10} \\ x \cdot V_{01} + y \cdot V_{11} \end{bmatrix}
-$$
+$$(W \cdot \begin{bmatrix} x \\ y \end{bmatrix}) \odot (V \cdot \begin{bmatrix} x \\ y \end{bmatrix}) 
+= \begin{bmatrix} x \cdot W_{00} + y \cdot W_{10} \\ x \cdot W_{01} + y \cdot W_{11} \end{bmatrix} \odot \begin{bmatrix} x \cdot V_{00} + y \cdot V_{10} \\ x \cdot V_{01} + y \cdot V_{11} \end{bmatrix}$$
 
-$$
-\begin{bmatrix} x^2 \cdot W_{00} \cdot V_{00} + xy \cdot W_{00} \cdot V_{10} + yx \cdot W_{10} \cdot V_{00} + y^2 \cdot W_{10} \cdot V_{10} \\ x^2 \cdot W_{01} \cdot V_{01} + xy \cdot W_{01} \cdot V_{11} + yx \cdot W_{11} \cdot V_{01} + y^2 \cdot W_{11} \cdot V_{11} \end{bmatrix}
-$$
+$$\begin{bmatrix} x^2 \cdot W_{00} \cdot V_{00} + xy \cdot W_{00} \cdot V_{10} + yx \cdot W_{10} \cdot V_{00} + y^2 \cdot W_{10} \cdot V_{10} \\ x^2 \cdot W_{01} \cdot V_{01} + xy \cdot W_{01} \cdot V_{11} + yx \cdot W_{11} \cdot V_{01} + y^2 \cdot W_{11} \cdot V_{11} \end{bmatrix}$$
 
 ### Input Symmetry
 Hopefully, you now have a good feel on what our bilinear layer can represent. There is one property that we haven't yet exploited to simplify this representation. Specifically, given that both out inputs are always the same, we can simplify all feature pair interactions. In the above example (given that $xy = yx$), we can rewrite the following in a few ways.
 
-$$
-\begin{align*}
+$$\begin{align*}
 &= xy \cdot W_{01} \cdot V_{11} + yx \cdot W_{11} \cdot V_{01} \\
 &= xy \cdot (W_{01} \cdot V_{11} + W_{11} \cdot V_{01}) + yx \cdot 0 \\
 &=  0.5 \cdot xy \cdot (W_{01} \cdot V_{11} + W_{11} \cdot V_{01}) + 0.5 \cdot yx \cdot(W_{01} \cdot V_{11} + W_{11} \cdot V_{01}) \\
-\end{align*}
-$$
+\end{align*}$$
 
 All computations are exactly equal, however, the interaction matrix first is not guaranteed to have any structure. The second is guaranteed to be a upper or lower triangular matrix. The third is guaranteed to be symmetric (equal to its transpose). In this project, we picked the symmetric matrix as this generally results in nicer plots and properties. This calculation is quite simple (*.mT* transposes the last two dimensions):
 
