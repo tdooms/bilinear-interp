@@ -1,37 +1,43 @@
 # Features in bilinear models
+
 ## Motivation
-- **What are features?**
-  - "Features" are currently a somewhat fuzzy concept to describe separable aspects of a dataset. It's sometimes possible to "know it when you see it".
-  - At different layers in a model, different features may be linearly accessible so that a simple linear layer can be used to readoff the feature values. This means that the next layer of a model can easily use the linearly accessible features output by a previous layer. 
-  - _Sparse autoencoders (SAEs)_ have been successfully used to find interpretable features in LLMs [[1]](#1). But it's unclear if the features they find correspond to those used for computation in the models. 
-    - For example, sparse autoencoders are trained over activations from a set of inputs. It's possible for SAEs to combine different linearly accessible features that are correlated into a single feature that might only be calculated by the model in a downstream layer. So SAEs might unintentionally find features from downstream layers.
-  - _Computational features_: In some sense, the model's weights should already reflect the statistics of the inputs so it should be possible to derive features from the model's weights alone. This might help limit our understanding to the features that the model's computations rely on instead of those that can be inferred over the input statistics. 
-- **Rewriting computations with features**
-  - In the ideal case, we'd be able to rewrite the full model in terms of features. This would demonstrate how higher-order features are computed in terms of lower-order ones, for example. 
-  - Nonlinearities such as ReLU make this challenging because features can interact in ways that are difficult to describe.
-  - SAEs are often trained with nonlinear activations like ReLU. So even though SAEs might describe the features present in a layer, they do not allow those features to be easily understood in terms of earlier features.
-- **Bilinear layers may allow us to trace features through a model**
-  - Bilinear layers of the form $g(x) = (W_1 x + b_1) \odot (W_2 x + b_2)$ are perhaps the simplest nonlinear activation since they only have terms quadratic or linear in $x$.
-  - Sharkey (2023) [[2]](#2) has suggested that bilinear layers may aid mechanistic interpretability because they are easier to analyze. They can be expressed using only linear operations and third order tensors, so techniques from linear algebra can be applied. It might be possible to "understand a smaller number of primitive features that bilinear
-layers use to ‘construct’ their (potentially exponential) larger number of features."
-  - _Bilinear layers may have little to no cost in terms of performance_. A comparison of activations functions found that bilinear activations outperformed ReLU in transformer models [[3]](#3). It had only slightly worse performance compared to SwiGLU, a modern version of the Gated Linear Unit (GLU) that is used in LLama and PaLM models. The bilinear activation can be seen as the simplest type of GLU.
-- **Our goal**
-  - Our goal is to understand how to extract features from bilinear layers, ideally from just the model weights.
-  - We'll study toy models of superposition and simple tasks, such as MNIST. 
+Sparse autoencoders (SAEs) have been successfully used to find interpretable features in LLMs ([Sharkey et al 2022](https://www.alignmentforum.org/posts/z6QQJbtpkEAX3Aojj/interim-research-report-taking-features-out-of-superposition); [Cunningham et al 2023](https://arxiv.org/abs/2309.08600); [Bricken et al 2023](https://transformer-circuits.pub/2023/monosemantic-features/index.html#appendix-feature-ablations)) but it's unclear if the features SAEs find correspond to those used for computation in the models. For example it's possible that SAEs capture additional features based on the statistics of their training data. In the ideal case, we'd be able to derive features directly from the model's weights. 
 
-## Approach
+Being able to "decompile" a model by rewriting its computation in terms of a sparse feature basis is an important step in the long term mechanistic interpretability agenda ([Sharkey 2024](https://www.alignmentforum.org/posts/64MizJXzyvrYpeKqm/sparsify-a-mechanistic-interpretability-research-agenda)). Currently the nonlinearities in models (and SAEs) make it difficult to decompile models because features can potentially interact in complicated ways. Recent work has focused on training "transcoders" (as opposed to autoencoders) to convert features in one layer to those in the next ([Riggs Smith et al 2024](https://www.alignmentforum.org/posts/7fxusXdkMNmAhkAfc/finding-sparse-linear-connections-between-features-in-llms)). 
 
-## Decomposing bilinear layers
+An alternative to transcoders is to choose a nonlinearity that makes decompiling easier. [Sharkey 2023](https://arxiv.org/abs/2305.03452) suggested that bilinear layers of the form $g(x) = (W_1 x + b_1) \odot (W_2 x + b_2)$ have simple nonlinearities that may make their interpretations easier. Bilinear layers have several nice properties:
+  - _Bilinear layers have comparable performance to other nonlinearities._ A comparison of activations functions found that bilinear activations outperformed ReLU and GELU in transformer models ([Shazeer 2022](https://arxiv.org/abs/2002.05202)) and similar but slightly worse performance to SwiGLU, a modern version of the Gated Linear Unit (GLU) that is used in LLama and PaLM models. The bilinear activation can be seen as the simplest type of GLU.
+  - _Computations can be expressed in terms of linear operations with a third order tensor._ This means we can leverage tensor or matrix decomposition, such as singular value decomposition, to understand the weights. For other activations, we can still do matrix decompositions on the weights but its unclear how to understand the results after applying the nonlinearity. 
+  - _Input pairs can act as a basis for bilinear outputs._ This is related to the previous point. Given a set of input features ${v_i}$ with activations ${a_i}$, the output can be expressed as a sum $\sum_{ij} a_i a_j u_{ij}$ where $u_{ij}$ is the output when the input is exactly $v_i + v_j$. The set of ${u_{ij}}$ are a basis for outputs and we can potentially analyze them instead of outputs over a dataset. For example we could train an SAE over $u_{ij}$ instead of a dataset. This may be a way to derive features purely from the model weights.
 
-## Features for a single layer MNIST model
+As a proof of concept we explored how to interpret bilinear layers trained for simple tasks, such as classifying MNIST digits. 
 
-## Feature reproducibility
+## The bilinear tensor
+We can express the action of the bilinear layer, $g(x) = (W_1 x + b_1) \odot (W_2 x + b_2)$, fully through a third order tensor that we'll denoted $B$ for "bilinear". Using the usual trick, we can fold the bias into the weight matrices as an additional column, eg $[W_1; b_1]$. 
 
-## Features in the uncompressed vs compressed regime
 
-## Features in deep MNIST models
-  
-# References
-- <a id="1">[1]</a> Towards Monosemanticity: Decomposing Language Models With Dictionary Learning [[link](https://transformer-circuits.pub/2023/monosemantic-features/index.html)] Bricken et al 10/2024. Anthropic. 
-- <a id="2">[2]</a> A technical note on bilinear layers for interpretability [[link](https://arxiv.org/abs/2305.03452)]. Lee Sharkey 05/2023
-- <a id="3">[3]</a> GLU Variants Improve Transformer [[link](https://arxiv.org/abs/2002.05202)] Noam Shazeer 02/2022
+Two linear layers, less weights than a full three tensor
+folding bias into the weights
+can save memory by keeping 
+B tensor, symmetrifying
+
+## Transforming to a feature basis
+
+Dotting B with a feature directions to get a feature’s quadratic “kernel” of interactions
+Eigenvectors of the quadratic kernel to get linear kernels
+
+Pseudoinverse trick to project onto a feature basis
+
+
+### MNIST digit directions
+
+### MNIST SAE features
+
+## Deriving features from the model weights
+
+### MNIST SVD
+
+### MNIST SAE over input pair vectors
+
+## Future Work
+
