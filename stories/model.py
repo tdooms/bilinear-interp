@@ -4,7 +4,8 @@ from torch import nn
 from torch.nn.functional import scaled_dot_product_attention
 from einops import *
 from transformers.modeling_outputs import CausalLMOutput
-from transformers import PretrainedConfig, PreTrainedModel
+from transformers import PretrainedConfig, PreTrainedModel, AutoTokenizer
+from shared.tensors import make_b, make_ube
 
 
 class Config(PretrainedConfig):
@@ -125,6 +126,7 @@ class Layer(nn.Module):
 class Transformer(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
+        self.config = config
         
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.n_vocab, config.d_model),
@@ -167,3 +169,87 @@ class Transformer(PreTrainedModel):
             shifted_labels = labels[..., 1:].contiguous()
             loss = self.criterion(shifted_logits.view(-1, logits.size(-1)), shifted_labels.view(-1))
             return CausalLMOutput(loss=loss, logits=logits)
+    
+    def b(self, layer):
+        w1, w2 = self.transformer.h[layer].mlp.w.weight.chunk(2, dim=0)
+        
+        w1_b = torch.block_diag(w1, torch.tensor(1, device=self.device))
+        w2_b = torch.block_diag(w2, torch.tensor(1, device=self.device))
+        
+        b, c = self.transformer.h[0].mlp.w.bias.cuda().chunk(2, dim=0)
+
+        w1_b[:-1, -1] = b
+        w2_b[:-1, -1] = c
+        
+        return make_b(w1_b, w2_b)
+    
+    def ube(self, layer):
+        e = self.transformer.wte.weight
+        p = self.transformer.h[layer].mlp.o.weight
+        u = self.lm_head.weight
+        
+        up = u @ p
+        
+        e_b = torch.block_diag(e, torch.tensor(1, device="cuda"))
+        up_b = torch.block_diag(up, torch.tensor(1, device="cuda"))
+        
+        return make_ube(e_b.T, self.b(layer), up_b)
+    
+    def rube(self, layer):
+        pass
+    
+    def center_unembed(self):
+        self.lm_head.weight = nn.Parameter(self.lm_head.weight - self.lm_head.weight.mean(dim=1, keepdim=True))
+        
+    def fold_norm(self):
+        pass
+    
+    @property
+    def ube_diagonal(self):
+        return einsum(self.w_e, self.w_e, self.w_l, self.w_r, self.w_p, self.w_u, "batch in1, batch in2, hid in1, hid in2, emb hid, out emb -> out batch").detach()
+        
+    @property
+    def vocab(self):
+        tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{self.config.n_vocab}-uncased", pad_token="[PAD]")
+        return tokenizer.vocab
+    
+    @property
+    def qkv(self):
+        qkv = self.transformer.h[0].attn.qkv.weight
+        return rearrange(qkv, "(n_proj n_head d_head) d_model -> n_proj n_head d_model d_head", n_proj=3, n_head=self.config.n_head)
+    
+    @property
+    def w_q(self):
+        return self.qkv[0]
+    
+    @property
+    def w_l(self):
+        return self.transformer.h[0].mlp.w.weight.chunk(2, dim=0)[0]
+    
+    @property
+    def w_r(self):
+        return self.transformer.h[0].mlp.w.weight.chunk(2, dim=0)[1]
+    
+    @property
+    def w_p(self):
+        return self.transformer.h[0].mlp.o.weight
+    
+    @property
+    def w_k(self):
+        return self.qkv[1]
+    
+    @property
+    def w_v(self):
+        return self.qkv[2]
+    
+    @property
+    def w_e(self):
+        return self.transformer.wte.weight
+    
+    @property
+    def w_pos(self):
+        return self.transformer.wpe.weight
+    
+    @property
+    def w_u(self):
+        return self.lm_head.weight

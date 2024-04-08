@@ -1,34 +1,33 @@
 # %%
+%load_ext autoreload
+%autoreload 2
+
 from nnsight import NNsight
-from transformers import PreTrainedTokenizerFast, PretrainedConfig
+from transformers import AutoTokenizer, PretrainedConfig
 from stories.model import Transformer, Config
 from IPython.display import display
-from huggingface_hub import notebook_login
+from stories.utils import get_summary, generate
 
 # %%
 
-tokenizer = PreTrainedTokenizerFast(tokenizer_file="stories-2048.json")
-tokenizer.pad_token = "[PAD]"
+tokenizer = AutoTokenizer.from_pretrained("tdooms/TinyStories-1024-uncased", pad_token="[PAD]")
+name = "tdooms/MicroStories-1-256"
 
-name = "biform3"
-
-config = Config.from_json_file(f"stories/{name}/config.json")
-model = Transformer.from_pretrained(f"stories/{name}", cfg=config).cuda()
+config = Config.from_pretrained(name)
+model = Transformer.from_pretrained(name, config=config)
 
 # %%
-display(model.get_summary()[0])
+display(get_summary(model)[0])
+print(f"{get_summary(model)[1]:,}")
 # %%
 
-prompt = "the frog and the lizard"
-input_ids = tokenizer.encode(prompt, return_tensors="pt").cuda()
+model.center_unembed()
 
-output = model.generate(input_ids, 100, temperature=1, top_k=2)
+prompt = "one plus one"
+input_ids = tokenizer.encode(prompt, return_tensors="pt")
+
+output = generate(model, input_ids, 100, temperature=1, top_k=2)
 output_text = tokenizer.decode(output[0], skip_special_tokens=True)
 
 print(output_text)
-# %%
-
-# notebook_login()
-# model.push_to_hub("test", use_temp_dir=True)
-
 # %%
