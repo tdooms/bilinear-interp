@@ -1,4 +1,5 @@
-# Features in bilinear models
+# Bilinear Layers for Interp: MNIST case study
+by Michael Pearce and Thomas Dooms
 
 ## Motivation
 Sparse autoencoders (SAEs) have been successfully used to find interpretable features in LLMs ([Sharkey et al 2022](https://www.alignmentforum.org/posts/z6QQJbtpkEAX3Aojj/interim-research-report-taking-features-out-of-superposition); [Cunningham et al 2023](https://arxiv.org/abs/2309.08600); [Bricken et al 2023](https://transformer-circuits.pub/2023/monosemantic-features/index.html#appendix-feature-ablations)) but it's unclear if the features SAEs find correspond to those used for computation in the models. For example it's possible that SAEs capture additional features based on the statistics of their training data. In the ideal case, we'd be able to derive features directly from the model's weights. 
@@ -48,6 +49,15 @@ x^T Q x = \sum_i \lambda_i (q_i^T x)^2
 so the eigenvectors $q_i$ act as a set of linear "kernels". By keeping the large magnitude eigenvalues (typically a small percentage) we can get a low rank approximation of the interaction matrices. 
 
 ### MNIST digit basis
+As an example of interpreting bilinear layers, we trained a bilinear model to classify handwritten digits in the MNIST dataset [training details in Appendix]. To have clear input and output features we used a single bilinear layer with a final linear readout, which we can use as $W_\text{out}$ to transform into the digit feature basis.
+
+For each digit $d$, the interaction matrix $Q_{ij}^{(d)} = \tilde{B}_{dij}$ involves interactions between many pairs of input pixels. Given the 2d structure of the inputs, it's easier to interpret the eigenvectors of $Q$ which are themselves 2d images, instead of parsing the interactions between pixels directly. The figure below shows the top 3 positive and negative eigenvectors for each digit. It's clear that the positive eigenvectors (top rows) capture features we might expect: circular curves for 0, a straight line for 1, parallel vertical lines for 4, a horizontal line for 5, etc. 
+
+Given an input $x$, the logit for digit $d$ is $x^T Q^{(d)} x = \sum_i  \lambda_i (q_i^T x)^2$, so it's the square of an eigenvector's overlap with the input that contributes. This means that both the blue (pos) and red (neg) parts contribute in the same way, ie the sign of $q^Tx$ does not matter. For example, the eigenvectors for 1 contain both red and blue lines which can have high overlap for 1's with different slants. 
+
+The computation using $Q$ is still a superposition over different features for each digit, for example over different locations in the image, different slants, and different digit shapes. The eigenvectors (and their separation in blue/red components) help disentangle this superposition to an extent. The eigenvectors are all orthogonal so each captures a different aspect (eg the 3rd positive eig for 1 adds a bottom horizontal line, the 3rd positive eig for 7 adds a horizontal cross) but the orthogonality constraint can also their interpretation less clear. There is likely a better approach to deriving interpretable features from $Q$ which we haven't fully explored, for example looking at the set of local maxima/minima for $x^T Q x$ might find a set of clear digits shapes 
+
+An important point is that the 10 different $Q$'s fully capture the model's computations. We could rewrite the model fully in terms of their eigenvectors if desired. This shows the advantages of the bilinear structure. For other nonlinearities it's difficult to escape the "neuron" basis in which the nonlinearity is applied when trying to connect the output features to input ones. 
 
 ![image](/images/MNIST_digit_basis_1K.png)
 
@@ -76,6 +86,7 @@ so the eigenvectors $q_i$ act as a set of linear "kernels". By keeping the large
 
 ## MNIST training
 [[Colab](https://colab.research.google.com/drive/12sE0jLTgY4_77ia7gRdCOo8-e52mJXRx?usp=sharing)]
+[add colabs for other hidden dims]
 - single layer model validation accuracy of 97.8%.
 - Similar performance for ReLU
 - Hidden dim: 1000 (higher dim minimizes random interference between input pair features)
