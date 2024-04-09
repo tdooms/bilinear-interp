@@ -61,9 +61,17 @@ An important point is that the 10 different $Q$'s fully capture the model's comp
 
 ![image](/images/MNIST_digit_basis_1K.png)
 
-### MNIST SAE features
+### MNIST SAE features using the pseudoinverse trick
+
+As an additional example, we trained a sparse autoencoder on the outputs of the bilinear layer (before the linear readout) [details in Appendix]. The SAE has an average of L0 of 5.2 but only 87 features are active (out of 2000 starting features) and a MSE/$L2^2$ of 0.28. We didn't try too hard to optimize the SAE training to minimize dead features or prevent dense features because we're mainly interested in illustrating how a set of dictionary features $D$ can be incorporated into the bilinear model. 
+
+The plots below show the top four features by mean activation. We see some similar eigenvectors to the digit basis results although noiser. Similar digits can be combined in the positive direction of an SAE feature (2 and 6, 4 and 9) while the negative direction can contains constrasting digits (3 vs 4 in feature 1).
 
 ![image](/images/MNIST_SAE_dataset_relu.png)
+
+The interaction matrices $Q$ are derived using the pseudoinverse trick described above using $W_\text{out} = D^+$. The fact that the logit directions mostly make sense in terms of the eigenvectors is a sign that the pseudoinverse is a reasonable way to incorporate the dictionary features. In fact, when restricting to the 87 active features, the **pseudoinverse activations improve the loss recovered from 87.1% for the ReLU activations to 98.1%**, using a random guessing baseline for the loss. The plot below shows that the pseudoinverse activations are well correlated with the nonzero ReLU activations and are typically small values for the zero ReLU activations. 
+
+![image](/images/MNIST_relu_vs_pinv_activations.png)
 
 ## Deriving features from the model weights
 
@@ -98,6 +106,8 @@ An important point is that the 10 different $Q$'s fully capture the model's comp
 - $MSE/L2^2$: 0.28
 - Dead feature frac: 96%
 - Active features: 87
+- [architecture]
+- penalty on feature similarity
 
 **SAE trained over bilinear tensor** [[Colab](https://colab.research.google.com/drive/1UCrpT-zod4ylPMaaqmz2BYrvYZYA_ndP?usp=sharing)]
 - Starting features: 5000
