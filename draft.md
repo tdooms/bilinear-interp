@@ -49,6 +49,7 @@ so the eigenvectors $q_i$ act as a set of linear "kernels". By keeping the large
 
 ### MNIST digit basis
 
+![image](/images/MNIST_digit_direction_features_1K.pdf)
 
 ### MNIST SAE features
 
