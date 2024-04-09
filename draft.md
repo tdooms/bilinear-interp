@@ -63,20 +63,37 @@ so the eigenvectors $q_i$ act as a set of linear "kernels". By keeping the large
 
 ![image](/images/MNIST_topk_bottleneck_accuracy_1K.png)
 
-
 ![image](/images/MNIST_best_match_similarity_1K.png)
 
 
 ### MNIST SAE over input pair vectors
+
+![image](/images/MNIST_SAE_btensor_relu.png)
 
 ## Future Work
 
 # Appendix 
 
 ## MNIST training
-single layer model validation accuracy of 97.8%.  Similar performance for ReLU
-link to colab
+[[Colab](https://colab.research.google.com/drive/12sE0jLTgY4_77ia7gRdCOo8-e52mJXRx?usp=sharing)]
+- single layer model validation accuracy of 97.8%.
+- Similar performance for ReLU
+- Hidden dim: 1000 (higher dim minimizes random interference between input pair features)
 
 ## SAE training
+**SAE trained over input dataset**
+[[Colab](https://colab.research.google.com/drive/19H1a_qy_RkqWzwV8i4W2gnuV3HwB1fhR?usp=sharing)]
+- Starting features: 2000
+- $L0$: 5.2
+- $MSE/L2^2$: 0.28
+- Dead feature frac: 96%
+- Active features: 87
+
+**SAE trained over bilinear tensor**
+- Starting features: 5000
+- $L0$: 30.4
+- $MSE/L2^2$: 0.29
+- Dead feature frac: 29%
+- Active features: 3544
 
 
