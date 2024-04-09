@@ -7,52 +7,45 @@ import plotly.express as px
 from shared.tensors import *
 import torch
 import json
+from bidict import bidict
+import pandas as pd
 
 torch.set_grad_enabled(False)
 
 # %%
 
-config = Config.from_pretrained("tdooms/MicroStories-1-256")
-model = Transformer.from_pretrained("tdooms/MicroStories-1-256", config=config)
+color = dict(color_continuous_midpoint=0, color_continuous_scale="RdBu")
+name = "tdooms/MicroStories-4-256"
+
+config = Config.from_pretrained(name)
+model = Transformer.from_pretrained(name, config=config).cuda()
+vocab = bidict(model.vocab)
 
 # %%
 
-w, v = model.transformer.h[0].mlp.w.weight.cuda().chunk(2, dim=0)
-e = model.transformer.wte.weight.cuda()
-u = (model.lm_head.weight @ model.transformer.h[0].mlp.o.weight).T.cuda()
-
-w_b = torch.block_diag(w, torch.tensor(1, device="cuda"))
-v_b = torch.block_diag(v, torch.tensor(1, device="cuda"))
-
-b, c = model.transformer.h[0].mlp.w.bias.cuda().chunk(2, dim=0)
-
-w_b[:-1, -1] = b
-v_b[:-1, -1] = c
-
-w_b = 0.5 * w_b
-v_b = 0.5 * v_b
-
-w_bd = torch.cat((w_b, torch.eye(w_b.size(0), w_b.size(1), device="cuda")), dim=1)
-w_bd[:, -1] = 0
-v_bd = torch.cat((v_b, torch.zeros(v_b.size(0), v_b.size(1), device="cuda")), dim=1)
-v_bd[:v_b.size(1), -1] = 1
-
-e_b = torch.block_diag(e, torch.tensor(1, device="cuda"))
-u_b = torch.block_diag(u, torch.tensor(1, device="cuda"))
-
-e_bd = torch.cat((e_b, e_b), dim=1)
-
-b = make_b(w_bd, v_bd)
-ube = make_ube(e_bd.T, b, u_b.T)
-
-# TODO: this transformation does not include the RMS norm, 
-# a quick hack could be to scale the indirect path by 0.5 (which is the scale of almost each hidden dim).
+def tokenize(indices):
+    return [vocab.inv[i.item()] for i in indices]
+    
+def show_max_activations(tensor, axes, fn, k=10):
+    top = torch.topk(tensor.flatten(), k=k)
+    dims = torch.unravel_index(top.indices, tensor.size())
+    
+    data = {k: fn(v.cpu()) for k, v in zip(axes, dims)}
+    data["value"] = top.values.cpu()
+    
+    return pd.DataFrame(data)
 
 # %%
 
-mat = ube.diagonal(dim1=-2, dim2=-1).cpu()
-px.imshow(mat, color_continuous_midpoint=0, color_continuous_scale="RdBu", height=1024)
+diag = torch.tensor([0.2, 0.2, 0.5, 0.5], device=model.device)[:, None, None] * model.ube.diagonal()
+diag += einsum(model.w_e, model.w_u, "res i, out res -> out i")
+# px.imshow(diag[0].cpu(), **color)
+
+show_max_activations(diag[0].T, ["input", "output"], tokenize, k=50)
 
 # %%
 
-px.imshow(model.transformer.h[0].n2.alpha.view(16, 16), color_continuous_midpoint=0, color_continuous_scale="RdBu")
+# model.transformer.h[3].n1.weight.data
+inter = model.ube.interaction(vocab["game"], residual=True)[0]
+
+show_max_activations(inter.tril(), ["input1", "input2"], tokenize, k=20)

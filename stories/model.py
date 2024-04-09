@@ -1,11 +1,12 @@
 
 import torch
+import pandas as pd
 from torch import nn
 from torch.nn.functional import scaled_dot_product_attention
 from einops import *
 from transformers.modeling_outputs import CausalLMOutput
 from transformers import PretrainedConfig, PreTrainedModel, AutoTokenizer
-from shared.tensors import make_b, make_ube
+from bidict import bidict
 
 
 class Config(PretrainedConfig):
@@ -22,8 +23,6 @@ class Config(PretrainedConfig):
         mlp_dropout: float = 0.0,
         embed_dropout: float = 0.0,
         bilinear: bool = True,
-        rms: bool = True,
-        bias = True,
         **kwargs
     ):
         self.n_vocab = n_vocab
@@ -37,8 +36,6 @@ class Config(PretrainedConfig):
         self.mlp_dropout = mlp_dropout
         self.embed_dropout = embed_dropout
         self.bilinear = bilinear
-        self.rms = rms
-        self.bias = bias
         
         super().__init__(**kwargs)
 
@@ -48,8 +45,8 @@ class Attention(nn.Module):
         super().__init__()
         self.cfg = cfg
         
-        self.qkv = nn.Linear(cfg.d_model, 3 * cfg.d_model)
-        self.o = nn.Linear(cfg.d_model, cfg.d_model)
+        self.qkv = nn.Linear(cfg.d_model, 3 * cfg.d_model, bias=False)
+        self.o = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
         self.dropout = nn.Dropout(cfg.resid_dropout)
     
     def forward(self, x):
@@ -70,7 +67,7 @@ class BLP(nn.Module):
     def __init__(self, cfg) -> None:
         super().__init__()
         
-        self.w = nn.Linear(cfg.d_model, 2*cfg.d_hidden, bias=cfg.bias)
+        self.w = nn.Linear(cfg.d_model, 2*cfg.d_hidden, bias=False)
         self.o = nn.Linear(cfg.d_hidden, cfg.d_model, bias=False)
         self.dropout = nn.Dropout(cfg.mlp_dropout)
         
@@ -97,14 +94,14 @@ class RMSNorm(nn.Module):
     def __init__(self, dims):
         super().__init__()
         
-        self.alpha = nn.Parameter(torch.zeros(dims))
+        # self.alpha = nn.Parameter(torch.zeros(dims))
         # This is a very strange bug, HuggingFace models don't like when this variable is called gamma
         self.weight = nn.Parameter(torch.ones(dims))
         # self.gamma = nn.Parameter(torch.ones(dims))
         self.eps = 1e-8
     
     def forward(self, x):
-        return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.weight + self.alpha
+        return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.weight
     
 
 class Layer(nn.Module):
@@ -114,14 +111,81 @@ class Layer(nn.Module):
         self.attn = Attention(cfg)
         self.mlp = BLP(cfg) if cfg.bilinear else MLP(cfg)
         
-        self.n1 = RMSNorm(cfg.d_model) if cfg.rms else nn.LayerNorm(cfg.d_model)
-        self.n2 = RMSNorm(cfg.d_model) if cfg.rms else nn.LayerNorm(cfg.d_model)
+        self.n1 = RMSNorm(cfg.d_model)
+        self.n2 = RMSNorm(cfg.d_model)
     
     def forward(self, x):
         x = x + self.attn(self.n1(x))
         x = x + self.mlp(self.n2(x))
         return x
 
+
+class UBE:
+    def __init__(self, inner) -> None:
+        self.inner = inner
+    
+    
+    def diagonal(self, residual=False, symmetric=True):
+        inner = self.inner
+        
+        diag = einsum(
+            inner.w_e, inner.w_e, inner.w_l, inner.w_r, inner.w_p, inner.w_u,
+            "emb1 i, emb2 i, ... hid emb1, ... hid emb2, ... res hid, out res -> ... out i"
+        )
+        
+        if symmetric:
+            diag = 0.5 * (diag + diag.mT)
+        
+        if residual:
+            diag += einsum(inner.w_e, inner.w_u, "res i, out res -> out i")
+        
+        return diag
+    
+    def interaction(self, idx, residual=False):
+        inner = self.inner
+        
+        inter = einsum(
+            inner.w_e, inner.w_e, inner.w_l, inner.w_r, inner.w_p, inner.w_u[idx],
+            "emb1 in1, emb2 in2, ... hid emb1, ... hid emb2, ... res hid, res -> ... in1 in2"
+        )
+        
+        # TODO: check the correctness of this residual term
+        if residual:
+            inter += einsum(inner.w_e, inner.w_e, inner.w_u[idx], "res in1, res in2, res -> in1 in2")
+        
+        return inter
+    
+class Vocab:
+    def __init__(self, config):
+        tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{config.n_vocab}-uncased", pad_token="[PAD]")
+        self.vocab = bidict(tokenizer.vocab)
+    
+    def tokenize(self, indices):
+        return [self.vocab.inv[i.item()] for i in indices]
+    
+    def get_max_activations(self, tensor, axes, k=10):
+        top = torch.topk(tensor.flatten(), k=k)
+        dims = torch.unravel_index(top.indices, tensor.size())
+        
+        data = {k: self.tokenize(v.cpu()) for k, v in zip(axes, dims)}
+        data["value"] = top.values.cpu()
+        
+        return pd.DataFrame(data)
+    
+    def __getitem__(self, key):
+        return self.vocab[key]
+    
+    def __len__(self):
+        return len(self.vocab)
+        
+    @property
+    def inv(self):
+        return self.vocab.inv
+    
+    @property
+    def inverse(self):
+        return self.vocab.inverse
+        
 
 class Transformer(PreTrainedModel):
     def __init__(self, config):
@@ -133,7 +197,7 @@ class Transformer(PreTrainedModel):
             wpe = nn.Embedding(config.n_ctx, config.d_model),
             drop = nn.Dropout(config.embed_dropout),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
-            ln_f = RMSNorm(config.d_model) if config.rms else nn.LayerNorm(config.d_model)
+            n_f = RMSNorm(config.d_model)
         ))
         
         self.lm_head = nn.Linear(config.d_model, config.n_vocab, bias=False)
@@ -159,7 +223,7 @@ class Transformer(PreTrainedModel):
         for layer in self.transformer.h:
             x = layer(x)
         
-        x = self.transformer.ln_f(x)
+        x = self.transformer.n_f(x)
         logits = self.lm_head(x)
         shifted_logits = logits[..., :-1, :].contiguous()
         
@@ -170,86 +234,86 @@ class Transformer(PreTrainedModel):
             loss = self.criterion(shifted_logits.view(-1, logits.size(-1)), shifted_labels.view(-1))
             return CausalLMOutput(loss=loss, logits=logits)
     
-    def b(self, layer):
-        w1, w2 = self.transformer.h[layer].mlp.w.weight.chunk(2, dim=0)
-        
-        w1_b = torch.block_diag(w1, torch.tensor(1, device=self.device))
-        w2_b = torch.block_diag(w2, torch.tensor(1, device=self.device))
-        
-        b, c = self.transformer.h[0].mlp.w.bias.cuda().chunk(2, dim=0)
-
-        w1_b[:-1, -1] = b
-        w2_b[:-1, -1] = c
-        
-        return make_b(w1_b, w2_b)
-    
-    def ube(self, layer):
-        e = self.transformer.wte.weight
-        p = self.transformer.h[layer].mlp.o.weight
-        u = self.lm_head.weight
-        
-        up = u @ p
-        
-        e_b = torch.block_diag(e, torch.tensor(1, device="cuda"))
-        up_b = torch.block_diag(up, torch.tensor(1, device="cuda"))
-        
-        return make_ube(e_b.T, self.b(layer), up_b)
-    
-    def rube(self, layer):
-        pass
-    
     def center_unembed(self):
         self.lm_head.weight = nn.Parameter(self.lm_head.weight - self.lm_head.weight.mean(dim=1, keepdim=True))
         
-    def fold_norm(self):
-        pass
-    
-    @property
-    def ube_diagonal(self):
-        return einsum(self.w_e, self.w_e, self.w_l, self.w_r, self.w_p, self.w_u, "batch in1, batch in2, hid in1, hid in2, emb hid, out emb -> out batch").detach()
+        return self
+        
+    def fold_norms(self, approximation=None):
+        for layer in self.transformer.h:
+            layer.attn.qkv.weight.data = layer.attn.qkv.weight.data * layer.n1.weight.data[None, :]
+            layer.mlp.w.weight.data = layer.mlp.w.weight.data * layer.n2.weight.data[None, :]
+            
+            layer.n1.weight.data = torch.ones_like(layer.n1.weight.data)
+            layer.n2.weight.data = torch.ones_like(layer.n2.weight.data)
+        
+        self.lm_head.weight.data = self.lm_head.weight.data * self.transformer.n_f.weight.data
+        self.transformer.n_f.weight.data = torch.ones_like(self.transformer.n_f.weight.data)
+        
+        return self
+        
         
     @property
     def vocab(self):
-        tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{self.config.n_vocab}-uncased", pad_token="[PAD]")
-        return tokenizer.vocab
+        return Vocab(self.config)
     
-    @property
-    def qkv(self):
-        qkv = self.transformer.h[0].attn.qkv.weight
-        return rearrange(qkv, "(n_proj n_head d_head) d_model -> n_proj n_head d_model d_head", n_proj=3, n_head=self.config.n_head)
+    def _qkv(self):
+        qkv = torch.stack([self.transformer.h[i].attn.qkv.weight for i in range(self.config.n_layer)], dim=0)
+        return rearrange(qkv, "n_layer (n_proj n_head d_head) d_model -> n_proj n_layer n_head d_head d_model", n_proj=3, n_head=self.config.n_head)
     
-    @property
-    def w_q(self):
-        return self.qkv[0]
-    
+    def _lr(self):
+        lr = torch.stack([self.transformer.h[i].mlp.w.weight for i in range(self.config.n_layer)], dim=0)
+        return rearrange(lr, "n_layer (n_proj d_hidden) d_model -> n_proj n_layer d_hidden d_model", n_proj=2)
+        
     @property
     def w_l(self):
-        return self.transformer.h[0].mlp.w.weight.chunk(2, dim=0)[0]
+        return self._lr()[0]
     
     @property
     def w_r(self):
-        return self.transformer.h[0].mlp.w.weight.chunk(2, dim=0)[1]
+        return self._lr()[1]
     
     @property
     def w_p(self):
-        return self.transformer.h[0].mlp.o.weight
+        return torch.stack([self.transformer.h[i].mlp.o.weight for i in range(self.config.n_layer)], dim=0)
+    
+    @property
+    def w_q(self):
+        return self._qkv()[0]
     
     @property
     def w_k(self):
-        return self.qkv[1]
+        return self._qkv()[1]
     
     @property
     def w_v(self):
-        return self.qkv[2]
+        return self._qkv()[2]
+    
+    @property
+    def w_o(self):
+        o = torch.stack([self.transformer.h[i].attn.o.weight for i in range(self.config.n_layer)], dim=0)
+        return rearrange(o, "n_layer d_model (n_head d_head) -> n_layer n_head d_model d_head", n_head=self.config.n_head)
     
     @property
     def w_e(self):
-        return self.transformer.wte.weight
+        return self.transformer.wte.weight.T
     
     @property
     def w_pos(self):
-        return self.transformer.wpe.weight
+        return self.transformer.wpe.weight.T
     
     @property
     def w_u(self):
         return self.lm_head.weight
+    
+    @property 
+    def qk(self):
+        return self.w_q.mT @ self.w_k
+    
+    @property 
+    def ov(self):
+        return self.w_o @ self.w_v
+    
+    @property
+    def ube(self):
+        return UBE(self)

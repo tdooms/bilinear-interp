@@ -16,7 +16,7 @@ from stories.utils import get_summary, generate
 
 # %%
 
-tokenizer = AutoTokenizer.from_pretrained("tdooms/TinyStories-4096-uncased", pad_token="[PAD]")
+tokenizer = AutoTokenizer.from_pretrained("tdooms/TinyStories-1024-uncased", pad_token="[PAD]")
 
 def tokenize(dataset):
     return tokenizer(dataset["text"], truncation=True, padding=True, max_length=212)
@@ -29,7 +29,7 @@ accuracy = evaluate.load("accuracy")
 tokenized_dataset = dataset.map(tokenize, batched=True, remove_columns=dataset.column_names)
 # %%
 # cfg = Config(n_vocab=tokenizer.vocab_size, n_ctx=212, d_hidden=4096, d_model=2048, n_head=32, n_layer=1)
-cfg = Config(n_vocab=tokenizer.vocab_size, n_ctx=212, n_layer=1, n_head=4, d_model=256, d_hidden=3*256)
+cfg = Config(n_vocab=tokenizer.vocab_size, n_ctx=212, n_layer=4, n_head=4, d_model=256, d_hidden=3*256, bias=False)
 model = Transformer(cfg)
 # %%
 display(get_summary(model)[0])
@@ -71,7 +71,7 @@ output_text = tokenizer.decode(output[0], skip_special_tokens=True)
 
 print(output_text)
 # %%
-model.push_to_hub("MacroStories-1-256")
+model.push_to_hub("MicroStories-1-256-b")
 
 # %%
 
