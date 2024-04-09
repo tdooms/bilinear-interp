@@ -49,13 +49,23 @@ so the eigenvectors $q_i$ act as a set of linear "kernels". By keeping the large
 
 ### MNIST digit basis
 
-![image](/images/MNIST_digit_direction_features_1K.pdf)
+![image](/images/MNIST_digit_basis_1K.png)
 
 ### MNIST SAE features
+
+![image](/images/MNIST_SAE_dataset_relu.png)
 
 ## Deriving features from the model weights
 
 ### MNIST SVD
+
+![image](/images/MNIST_svd_features_1K.png)
+
+![image](/images/MNIST_topk_bottleneck_accuracy_1K.png)
+
+
+![image](/images/MNIST_best_match_similarity_1K.png)
+
 
 ### MNIST SAE over input pair vectors
 
