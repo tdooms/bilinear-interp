@@ -81,15 +81,14 @@ so the eigenvectors $q_i$ act as a set of linear "kernels". By keeping the large
 - Hidden dim: 1000 (higher dim minimizes random interference between input pair features)
 
 ## SAE training
-**SAE trained over input dataset**
-[[Colab](https://colab.research.google.com/drive/19H1a_qy_RkqWzwV8i4W2gnuV3HwB1fhR?usp=sharing)]
+**SAE trained over input dataset** [[Colab](https://colab.research.google.com/drive/19H1a_qy_RkqWzwV8i4W2gnuV3HwB1fhR?usp=sharing)]
 - Starting features: 2000
 - $L0$: 5.2
 - $MSE/L2^2$: 0.28
 - Dead feature frac: 96%
 - Active features: 87
 
-**SAE trained over bilinear tensor**
+**SAE trained over bilinear tensor** [[Colab](https://colab.research.google.com/drive/1UCrpT-zod4ylPMaaqmz2BYrvYZYA_ndP?usp=sharing)]
 - Starting features: 5000
 - $L0$: 30.4
 - $MSE/L2^2$: 0.29
