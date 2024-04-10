@@ -86,11 +86,14 @@ The SVD gives $B_{a(ij)} = \sum_s  U_{as} \sigma_s Q_{s(ij)}$ where $\sigma_s$ a
 
 ### MNIST SVD
 
-
+The plots below show the $Q$ eigenvectors for the top SVD components. We see similar eigenvectors to the digit basis ones, particularly for 2, 5, 3, 6, and 7, so the features generally seem reasonable. Some SVD components combine different digits, for example component 1 has 4/9 (positive direction) vs 2 (neg) and component 2 has 3 vs 6, so generally each component have more superposition than the interaction matrices in the digit basis. 
 
 ![image](/images/MNIST_svd_features_1K.png)
 
 ![image](/images/MNIST_topk_bottleneck_accuracy_1K.png)
+
+[not clear if there are "true" ways to combine digits into a single interaction matrix]
+[but at least reproducible]
 
 ![image](/images/MNIST_best_match_similarity_1K.png)
 
