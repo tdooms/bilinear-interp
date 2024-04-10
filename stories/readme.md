@@ -20,7 +20,9 @@ We also performed a limited amount of semi-rigorous ablations:
 
 **Switching the order of the MLP**. Swapping the linear projection and the bilinear operations is way worse (loss goes up by 0.2).
 
-**Not using biases in the bilinear layer**. The difference is negligible but slightly in favor of including it (loss goes up to 0.02).
+**Not using biases in the bilinear layer**. The difference is negligible but slightly in favor of including it.
+
+**Not using biases in the normalization**. The difference is surprisingly negligible in small models (loss goes up by 0.02). More complex models seem to struggle though by not including them.
 
 **Initialization**. I haven't studied this in-depth, it seems to have a large impact (easily 0.1 loss). The initialization variation between runs seems to not matter at all (same loss up to 2 decimal points).
 

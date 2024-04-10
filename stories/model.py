@@ -8,6 +8,72 @@ from transformers.modeling_outputs import CausalLMOutput
 from transformers import PretrainedConfig, PreTrainedModel, AutoTokenizer
 from bidict import bidict
 
+class UBE:
+    def __init__(self, inner) -> None:
+        self.inner = inner
+    
+    
+    def diagonal(self, residual=False):
+        inner = self.inner
+        
+        diag = einsum(
+            inner.w_e, inner.w_e, inner.w_l, inner.w_r, inner.w_p, inner.w_u,
+            "emb1 i, emb2 i, ... hid emb1, ... hid emb2, ... res hid, out res -> ... out i"
+        )
+        
+        if residual:
+            diag += einsum(inner.w_e, inner.w_u, "res i, out res -> out i")
+        
+        return diag
+    
+    def interaction(self, idx, residual=False, symmetric=True):
+        inner = self.inner
+        
+        inter = einsum(
+            inner.w_e, inner.w_e, inner.w_l, inner.w_r, inner.w_p, inner.w_u[idx],
+            "emb1 in1, emb2 in2, ... hid emb1, ... hid emb2, ... res hid, res -> ... in1 in2"
+        )
+        
+        if symmetric:
+            inter = 0.5 * (inter + inter.mT)
+        
+        # TODO: check the correctness of this residual term
+        if residual:
+            inter += einsum(inner.w_e, inner.w_e, inner.w_u[idx], "res in1, res in2, res -> in1 in2")
+        
+        return inter
+    
+class Vocab:
+    def __init__(self, config):
+        tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{config.n_vocab}-uncased", pad_token="[PAD]")
+        self.vocab = bidict(tokenizer.vocab)
+    
+    def tokenize(self, indices):
+        return [self.vocab.inv[i.item()] for i in indices]
+    
+    def get_max_activations(self, tensor, axes, k=10, largest=True):
+        top = torch.topk(tensor.flatten(), k=k, largest=largest)
+        dims = torch.unravel_index(top.indices, tensor.size())
+        
+        data = {k: self.tokenize(v.cpu()) for k, v in zip(axes, dims)}
+        data["value"] = top.values.cpu()
+        
+        return pd.DataFrame(data)
+    
+    def __getitem__(self, key):
+        return self.vocab[key]
+    
+    def __len__(self):
+        return len(self.vocab)
+    
+    @property
+    def inv(self):
+        return self.vocab.inv
+    
+    @property
+    def inverse(self):
+        return self.vocab.inverse
+    
 
 class Config(PretrainedConfig):
     def __init__(
@@ -23,6 +89,8 @@ class Config(PretrainedConfig):
         mlp_dropout: float = 0.0,
         embed_dropout: float = 0.0,
         bilinear: bool = True,
+        norm_bias: bool = False,
+        mlp_bias: bool = False,
         **kwargs
     ):
         self.n_vocab = n_vocab
@@ -36,6 +104,8 @@ class Config(PretrainedConfig):
         self.mlp_dropout = mlp_dropout
         self.embed_dropout = embed_dropout
         self.bilinear = bilinear
+        self.norm_bias = norm_bias
+        self.mlp_bias = mlp_bias
         
         super().__init__(**kwargs)
 
@@ -67,7 +137,7 @@ class BLP(nn.Module):
     def __init__(self, cfg) -> None:
         super().__init__()
         
-        self.w = nn.Linear(cfg.d_model, 2*cfg.d_hidden, bias=False)
+        self.w = nn.Linear(cfg.d_model, 2*cfg.d_hidden, bias=cfg.mlp_bias)
         self.o = nn.Linear(cfg.d_hidden, cfg.d_model, bias=False)
         self.dropout = nn.Dropout(cfg.mlp_dropout)
         
@@ -91,17 +161,14 @@ class MLP(nn.Module):
 
 
 class RMSNorm(nn.Module):
-    def __init__(self, dims):
+    def __init__(self, dims, bias=False):
         super().__init__()
-        
-        # self.alpha = nn.Parameter(torch.zeros(dims))
-        # This is a very strange bug, HuggingFace models don't like when this variable is called gamma
         self.weight = nn.Parameter(torch.ones(dims))
-        # self.gamma = nn.Parameter(torch.ones(dims))
+        self.bias = nn.Parameter(torch.zeros(dims)) if bias else None
         self.eps = 1e-8
     
     def forward(self, x):
-        return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.weight
+        return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.weight + (0 if self.bias is None else self.bias)
     
 
 class Layer(nn.Module):
@@ -111,80 +178,13 @@ class Layer(nn.Module):
         self.attn = Attention(cfg)
         self.mlp = BLP(cfg) if cfg.bilinear else MLP(cfg)
         
-        self.n1 = RMSNorm(cfg.d_model)
-        self.n2 = RMSNorm(cfg.d_model)
+        self.n1 = RMSNorm(cfg.d_model, cfg.norm_bias)
+        self.n2 = RMSNorm(cfg.d_model, cfg.norm_bias)
     
     def forward(self, x):
         x = x + self.attn(self.n1(x))
         x = x + self.mlp(self.n2(x))
         return x
-
-
-class UBE:
-    def __init__(self, inner) -> None:
-        self.inner = inner
-    
-    
-    def diagonal(self, residual=False, symmetric=True):
-        inner = self.inner
-        
-        diag = einsum(
-            inner.w_e, inner.w_e, inner.w_l, inner.w_r, inner.w_p, inner.w_u,
-            "emb1 i, emb2 i, ... hid emb1, ... hid emb2, ... res hid, out res -> ... out i"
-        )
-        
-        if symmetric:
-            diag = 0.5 * (diag + diag.mT)
-        
-        if residual:
-            diag += einsum(inner.w_e, inner.w_u, "res i, out res -> out i")
-        
-        return diag
-    
-    def interaction(self, idx, residual=False):
-        inner = self.inner
-        
-        inter = einsum(
-            inner.w_e, inner.w_e, inner.w_l, inner.w_r, inner.w_p, inner.w_u[idx],
-            "emb1 in1, emb2 in2, ... hid emb1, ... hid emb2, ... res hid, res -> ... in1 in2"
-        )
-        
-        # TODO: check the correctness of this residual term
-        if residual:
-            inter += einsum(inner.w_e, inner.w_e, inner.w_u[idx], "res in1, res in2, res -> in1 in2")
-        
-        return inter
-    
-class Vocab:
-    def __init__(self, config):
-        tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{config.n_vocab}-uncased", pad_token="[PAD]")
-        self.vocab = bidict(tokenizer.vocab)
-    
-    def tokenize(self, indices):
-        return [self.vocab.inv[i.item()] for i in indices]
-    
-    def get_max_activations(self, tensor, axes, k=10):
-        top = torch.topk(tensor.flatten(), k=k)
-        dims = torch.unravel_index(top.indices, tensor.size())
-        
-        data = {k: self.tokenize(v.cpu()) for k, v in zip(axes, dims)}
-        data["value"] = top.values.cpu()
-        
-        return pd.DataFrame(data)
-    
-    def __getitem__(self, key):
-        return self.vocab[key]
-    
-    def __len__(self):
-        return len(self.vocab)
-        
-    @property
-    def inv(self):
-        return self.vocab.inv
-    
-    @property
-    def inverse(self):
-        return self.vocab.inverse
         
 
 class Transformer(PreTrainedModel):
@@ -197,7 +197,7 @@ class Transformer(PreTrainedModel):
             wpe = nn.Embedding(config.n_ctx, config.d_model),
             drop = nn.Dropout(config.embed_dropout),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
-            n_f = RMSNorm(config.d_model)
+            n_f = RMSNorm(config.d_model, config.norm_bias)
         ))
         
         self.lm_head = nn.Linear(config.d_model, config.n_vocab, bias=False)

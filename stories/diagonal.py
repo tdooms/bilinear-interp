@@ -76,3 +76,4 @@ print([vocab.inv[idx.item()] for idx in indices])
 indices = diag.abs().mean(1).sort(descending=False).indices[:50]
 print([vocab.inv[idx.item()] for idx in indices])
 # %%
+
