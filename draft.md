@@ -9,7 +9,7 @@ Being able to "decompile" a model by rewriting its computation in terms of a spa
 An alternative to transcoders is to choose a nonlinearity that makes decompiling easier. [Sharkey 2023](https://arxiv.org/abs/2305.03452) suggested that bilinear layers of the form $g(x) = (Wx + b_w) \odot (V x + b_v)$ have simple nonlinearities that may make their interpretations easier. Bilinear layers have several nice properties:
   - **Bilinear layers have comparable performance to other nonlinearities.** A comparison of activations functions found that bilinear activations outperformed than ReLU and GELU in transformer models ([Shazeer 2022](https://arxiv.org/abs/2002.05202)) and similar performance to SwiGLU, a modern version of the Gated Linear Unit (GLU) that is used in LLama and PaLM models. The bilinear activation can be seen as the simplest type of GLU.
   - **Computations can be expressed in terms of linear operations with a third order tensor.** This means we can leverage tensor or matrix decompositions, such as singular value decomposition, to understand the weights. For other activation functions, we could still do matrix decompositions on the weights but we cannot propagate the transformations through the privileged basis created by the elementwise nonlinearity. 
-  - **Input pairs can act as a basis for bilinear outputs.** This is related to the previous point. Given a set of input features $\vec{v_i}$ with activations ${a_i}$, the output can be expressed as a sum $\sum_{ij} a_i a_j \vec{u}\_{ij}$ where $\vec{u}\_{ij}$ is the output when the input is exactly $\vec{v_i} + \vec{v_j}$. The set of $\vec{u}\_{ij}$ are a basis for outputs and we can potentially analyze them instead of outputs over a dataset. For example we could train an SAE over $\vec{u}\_{ij}$ instead of a dataset. This may be a way to derive features purely from the model weights.
+  - **Input pairs can act as a basis for bilinear outputs.** This is related to the previous point. Given a set of input features $\vec{v_i}$ with activations ${a_i}$, the output can be expressed as a sum $\sum_{ij} a_i a_j \vec{r}\_{ij}$ where $\vec{r}\_{ij}$ is the output when the input is exactly $\vec{v_i} + \vec{v_j}$. The set of $\vec{r}\_{ij}$ are a basis for outputs and we can potentially analyze them instead of outputs over a dataset. For example we could train an SAE over $\vec{r}\_{ij}$ instead of a dataset. This may be a way to derive features purely from the model weights.
 
 As a proof of concept we explored how to interpret bilinear layers trained for simple tasks, such as classifying MNIST digits. 
 
@@ -27,9 +27,9 @@ B_{aij} \equiv \frac{1}{2} \left( W_{ai} V_{aj} + W_{aj}V_{ai}\right)
 Since the bilinear tensor is constructed from two matrices, it has fewer parameters than a full rank 3-tensor and is faster to train. Constructing the full bilinear tensor can require a large amount of memory, so it's often easier to keep the $W$ and $V$ and construct $B$ on the fly when needed. 
 
 ## Transforming to a feature basis
-Say we're given a set of embedding and unembedding weight matrices, $W_\text{in}$ and $W_\text{out}$, that transform from input features or into output features. We can then transform the bilinear tensor to be into both feature bases:
+Say we're given a set of embedding and unembedding weight matrices, $E$ and $U$, that transform from input features or into output features. We can then transform the bilinear tensor to be into both feature bases:
 ```math
-\tilde{B}_{a'i'j'} = \sum_{aij} (W_\text{out})_{a'a} B_{aij} (W_\text{in})_{i i'}(W_\text{in})_{j j'}
+\tilde{B}_{a'i'j'} = \sum_{aij} U_{a'a} B_{aij}E_{i i'}E_{j j'}
 ```
 ### The pseudoinverse trick for feature dictionaries
 Instead of an unembedding matrix we might be given a dictionary $D$ of features as its columns. These features might come from a sparse autoencoder where the activations are given by a ReLU or some other nonlinear function. Nonlinear activations are difficult to incorporate into a model without altering the computations (due to reconstruction error) or keeping the interactions between features interpretable.
@@ -50,7 +50,7 @@ x^T Q x = \sum_i \lambda_i (q_i^T x)^2
 so the eigenvectors $q_i$ act as a set of linear "kernels". By keeping the large magnitude eigenvalues (typically a small percentage) we can get a low rank approximation of the interaction matrices. 
 
 ### The MNIST digit basis
-As an example of interpreting bilinear layers, we trained a bilinear model to classify handwritten digits in the MNIST dataset [training details in Appendix]. To have clear input and output features we used a single bilinear layer with a final linear readout, which we can use as $W_\text{out}$ to transform into the digit feature basis.
+As an example of interpreting bilinear layers, we trained a bilinear model to classify handwritten digits in the MNIST dataset [training details in Appendix]. To have clear input and output features we used a single bilinear layer with a final linear readout, which we can use as the unembedding $U$ to transform into the digit feature basis.
 
 For each digit $d$, the interaction matrix $Q_{ij}^{(d)} = \tilde{B}_{dij}$ involves interactions between many pairs of input pixels. Given the 2d structure of the inputs, it's easier to interpret the eigenvectors of $Q$ which are themselves 2d images, instead of parsing the interactions between pixels directly. The figure below shows the top 3 positive and negative eigenvectors for each digit. It's clear that the positive eigenvectors (top rows) capture features we might expect: circular curves for 0, a straight line for 1, parallel vertical lines for 4, a horizontal line for 5, etc. 
 
@@ -70,20 +70,20 @@ The plots below show the top four features by mean activation. We see some simil
 
 ![image](/images/MNIST_SAE_dataset_relu.png)
 
-The interaction matrices $Q$ are derived using the pseudoinverse trick described above using $W_\text{out} = D^+$. The fact that the logit directions mostly make sense in terms of the eigenvectors is a sign that the pseudoinverse is a reasonable way to incorporate the dictionary features. In fact, when restricting to the 87 active features, the **pseudoinverse activations improve the loss recovered from 87.1% for the ReLU activations to 98.1%**, using a random guessing baseline for the loss. The plot below shows that the pseudoinverse activations are well correlated with the nonzero ReLU activations and are typically small values for the zero ReLU activations.
+The interaction matrices $Q$ are derived using the pseudoinverse trick described above using $U = D^+$. The fact that the logit directions mostly make sense in terms of the eigenvectors is a sign that the pseudoinverse is a reasonable way to incorporate the dictionary features. In fact, when restricting to the 87 active features, the **pseudoinverse activations improve the loss recovered from 87.1% for the ReLU activations to 98.1%**, using a random guessing baseline for the loss. The plot below shows that the pseudoinverse activations are well correlated with the nonzero ReLU activations and are typically small values for the zero ReLU activations.
 
 ![image](/images/MNIST_relu_vs_pinv_activations.png)
 
 ## Deriving features from the model weights
-An exciting aspect of bilinear layers is that they suggest a few approaches for deriving features directly from the model weights. These approaches rely on the fact that **pairs of input features can act as a basis for the layer's outputs**. Given a set of input features $\vec{v_i}$ with activations ${a_i}$, the output can be expressed as a sum $\sum_{ij} a_i a_j \vec{u}\_{ij}$ where $\vec{u}\_{ij}$ is the output when the input is exactly $\vec{v_i} + \vec{v_j}$. So finding a set of features to describe the outputs $\vec{u}\_{ij}$ also finds features for all outputs of the bilinear layer. 
+An exciting aspect of bilinear layers is that they suggest a few approaches for deriving features directly from the model weights. These approaches rely on the fact that **pairs of input features can act as a basis for the layer's outputs**. Given a set of input features $\vec{v_i}$ with activations ${a_i}$, the output can be expressed as a sum $\sum_{ij} a_i a_j \vec{r}\_{ij}$ where $\vec{r}\_{ij}$ is the output when the input is exactly $\vec{v_i} + \vec{v_j}$. So finding a set of features to describe the outputs $\vec{r}\_{ij}$ also finds features for all outputs of the bilinear layer. 
 
 We've explored two basic approaches:
 
-**Singular Value Decomposition (SVD)**: We can treat the set of outputs $\vec{u}\_{ij}$ as a matrix, which ends up being equivalent to a vectorized version of the bilinear tensor $B_{a(ij)} = (\vec{u_{ij}})\_a$ where $(ij)$ indexes the pair of inputs. The singular value decomposition (SVD) allows us to obtain the best low rank approximations for this matrix.
+**Singular Value Decomposition (SVD)**: We can treat the set of outputs $\vec{r}\_{ij}$ as a matrix, which ends up being equivalent to a vectorized version of the bilinear tensor $B_{a(ij)} = (\vec{r}\_{ij})\_a$ where $(ij)$ indexes the pair of inputs. The singular value decomposition (SVD) allows us to obtain the best low rank approximations for this matrix.
 
-The SVD gives $B_{a(ij)} = \sum_s  U_{as} \sigma_s Q_{s(ij)}$ where $\sigma_s$ are the singular values and $U$ and $Q$ are orthonormal matrices. For each singular value component, $Q_{s(ij)}$ can be considered an interaction matrix, $Q^{(s)}\_{ij}$ which we can analyze through its eigenvectors as before. The component's output is simply $\vec{u}\_s$.
+The SVD gives $B_{a(ij)} = \sum_s  R_{as} \sigma_s Q_{s(ij)}$ where $\sigma_s$ are the singular values and $R$ and $Q$ are orthonormal matrices. For each singular value component, $Q_{s(ij)}$ can be considered an interaction matrix, $Q^{(s)}\_{ij}$ which we can analyze through its eigenvectors as before. The component's output is simply $\vec{r}\_s$.
 
-**Sparse autoencoders (SAEs)**: We can treat the set of input pair vectors $\vec{u}\_{ij}$ as a dataset for training an SAE. If we can decompose each input pair vector into a set of features, then we can use those same features to decompose any output of the bilinear layer. Each feature would correspond to a weighted sum over the set of input pairs with nonzero activations. 
+**Sparse autoencoders (SAEs)**: We can treat the set of input pair vectors $\vec{r}\_{ij}$ as a dataset for training an SAE. If we can decompose each input pair vector into a set of features, then we can use those same features to decompose any output of the bilinear layer. Each feature would correspond to a weighted sum over the set of input pairs with nonzero activations. 
 
 ### SVD on the bilinear tensor
 
@@ -99,7 +99,7 @@ Although the SVD gives a small set of the important components, it's unclear if 
 
 ### SAE over input pair vectors
 
-The plots below show the results of training an SAE over the set of input pair vectors, $\vec{u}\_{ij}$. We selected the SAE features out of the top 10 that showed activations with greater specificity for individual digits. 
+The plots below show the results of training an SAE over the set of input pair vectors, $\vec{r}\_{ij}$. We selected the SAE features out of the top 10 that showed activations with greater specificity for individual digits. 
 
 Even though the training set consisted of outputs when only two pixels are active, the SAE features make sense as curves over hundreds of pixels. This demonstrates the utility of treating the input pair vectors as a basis for the outputs. Each pair of pixels contributes to a small set of features but many pixel pairs can contribute to the same feature, creating curves and shapes. For this SAE, L0 = 30.4 with 3500 active features. 
 
