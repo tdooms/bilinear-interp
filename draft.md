@@ -1,6 +1,11 @@
 # Bilinear Layers for Mech-Interp: an MNIST case study
 by Michael Pearce and Thomas Dooms
 
+## TLDR
+Bilinear layers of the form $g(x) = (Wx + b_w) \odot (V x + b_v)$ may help in interpreting how input features interact to create output features. For a given output, pairwise interactions between features can be described by a matrix which can be analyzed in various ways including eigendecomposition. We demonstrate this approach for a bilinear model trained to classify MNIST handwritten digits and find "kernels" that capture common curve segments for each digit. We also explore how to derive features directly from the model weights using singular value decomposition and sparse coding.
+
+To rewrite a model's computations in the feature basis of a dictionary $D$, we introduce a "pseudoinverse trick" that sacrifices strict sparsity but maintains linearity and results in minimal reconstruction loss. In practice we find that zero activations remain small while large activations are well correlated. 
+
 ## Motivation
 Sparse autoencoders (SAEs) have been successfully used to find interpretable features in LLMs ([Sharkey et al 2022](https://www.alignmentforum.org/posts/z6QQJbtpkEAX3Aojj/interim-research-report-taking-features-out-of-superposition); [Cunningham et al 2023](https://arxiv.org/abs/2309.08600); [Bricken et al 2023](https://transformer-circuits.pub/2023/monosemantic-features/index.html#appendix-feature-ablations)) but it's unclear if the features SAEs find correspond to those used for computation in the models. For example it's possible that SAEs capture additional features based on the statistics of their training data. In the ideal case, we'd be able to derive features directly from the model's weights. 
 
@@ -126,7 +131,7 @@ There are several interesting directions to try next:
 
 ## MNIST training
 **Single Layer Model** [[Colab](https://colab.research.google.com/drive/12sE0jLTgY4_77ia7gRdCOo8-e52mJXRx?usp=sharing)]
-[add colabs for other hidden dims]
+- To simplify the analysis, we trained a bilinear model without biases. We found that the performance with and without biases was similar. 
 - Validation accuracy: 97.8%. We found similar performance for ReLU models matched for the same parameter count.
 - Hidden dim: 1000.
   - Higher hidden dimensions have smaller interference between features in superposition, leading to cleaner representations.
