@@ -71,7 +71,7 @@ An important point is that the 10 different $Q$'s fully capture the model's comp
 
 As an additional example, we trained a sparse autoencoder on the outputs of the bilinear layer (before the linear readout) [details in Appendix]. The SAE has an average of L0 of 5.2 but only 87 features are active (out of 2000 starting features) and a MSE/$L2^2$ of 0.28. We didn't try too hard to optimize the SAE training to minimize dead features or prevent dense features because we're mainly interested in illustrating how a set of dictionary features $D$ can be incorporated into the bilinear model. 
 
-The plots below show the top four features by mean activation. We see some similar eigenvectors to the digit basis results although noiser. Similar digits can be combined in the positive direction of an SAE feature (2 and 6, 4 and 9) while the negative direction can contains constrasting digits (3 vs 4 in feature 1).
+The plots below show the top four features by mean activation. We see some similar eigenvectors to the digit basis results although noisier. Similar digits can be combined in the positive direction of an SAE feature (2 and 6, 4 and 9) while the negative direction can contains contrasting digits (3 vs 4 in feature 1).
 
 ![image](/images/MNIST_SAE_dataset_relu.png)
 
