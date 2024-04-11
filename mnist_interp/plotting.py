@@ -30,7 +30,7 @@ def plot_B_tensor_image_eigenvectors(B,  idx, **kwargs):
 
 def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10),
-    title = 'SVD Component', vmax=None, data_loader = None, sort='activations'):
+    title = 'SVD Component', vmax=None, data_loader = None, sort='eigs'):
     
     device = svd.V.device
     if idxs is None:
@@ -66,9 +66,9 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
             mean_acts = mean_acts[mean_acts_idxs]
             eigvecs = eigvecs[:,mean_acts_idxs]
             eigvals = eigvals[mean_acts_idxs]
-            title_fn = lambda x,y: f"Mean Act={y:.2f} | Eig={x:.2f}"
+            title_fn = lambda x,y: f"Mean Act={y:.2f}, Eig={x:.2f}"
         else:
-            title_fn = lambda x,y: f"Eig={x:.2f} | Mean Act={y:.2f}"
+            title_fn = lambda x,y: f"Eig={x:.2f}, Mean Act={y:.2f}"
     else:
         title_fn = lambda x,y: f"Eig={x:.2f}"
         mean_acts = torch.ones(img_size[0]*img_size[1])
