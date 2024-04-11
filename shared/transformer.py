@@ -7,7 +7,6 @@ from einops import *
 from transformers.modeling_outputs import CausalLMOutput
 from transformers import PretrainedConfig, PreTrainedModel, AutoTokenizer
 from bidict import bidict
-import re
 
 class UBE:
     def __init__(self, inner) -> None:
