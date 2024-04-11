@@ -74,7 +74,7 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     eig_indices = torch.cat([-eig_indices-1, eig_indices])
     eigvals = eigvals[eig_indices]
     eigvecs = eigvecs[:,eig_indices]
-    mean_acts = mean_acts[:,eig_indices]
+    mean_acts = mean_acts[eig_indices]
     Q_img[:,idxs] = eigvecs.T
     Q_max = 0.9 * Q_img[torch.logical_not(Q_img.isnan())].abs().max()
 
