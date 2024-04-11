@@ -64,13 +64,3 @@ Let's dissect how to construct this OV++ tensor. First, we need a single object 
 On the surface, this seems to be overly convoluted but this is where the original OV matrix comes into play. When using a single head, the $OV$ matrix has size $\text{d\_model} \times \text{d\_model}$, we can double this to become $\text{d\_model} \times 2\cdot \text{d\_model}$. Then, we fold this doubled matrix into the doubled $B$ tensor. The result is an undoubled tensor just consisting of $\text{d\_model} \times \text{d\_model} \times \text{d\_model}$, which is exactly what we wanted. When using multiple heads, we perform the a similar operation such resulting in a tensor with dims $\text{n\_head}\times \text{d\_model} \times \text{d\_head} \times \text{d\_head}$.
 
 Within this analysis, I have ignored the normalization operation right before the MLP. The can fold the $\gamma$ and $\alpha$ into the B tensor as usual, however, we also have to account for the division. We are using RMS, so there is only a single term. Sadly, as this term relies on exact activations, we need input statistics to do so.
-
-### Preliminary notes on interpretability
-
-While this document is mostly supposed to be an introduction to this work and provide a mathematical framework for interpreting these models, I wanted to leave some notes on preliminary experiments. It's strongly possible though that this is a product of factors that were not yet included in the analysis.
-
-**Token-token interactions are not sparse**. It would be fair to expect that most token interactions are very sparse as generally, the majority of words have no influence on others. We've seen this not to be the case, there are a lot of "spurious" relation between words that the model has learnt.
-
-**Strong Token-token relations are very sensible**. Looking at the strongest weights of token-token interactions, there is a lot of activity for obvious n-grams. "playing, play, our, different, other, what <-> games". Also, follow-tokens (idk what the name is), such as "##ought" have strong relations to the obvious prepends such as "br", "f", "s", "th".
-
-**B-tensor features seem highly structured**. At least, in a single layer model, the outputs of the B tensor seem to be semi-sparse to the hidden dimension.

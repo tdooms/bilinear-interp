@@ -1,6 +1,6 @@
 # %%
 from shared.features import *
-from shared.model import *
+from shared.toy import *
 import torch
 from einops import *
 import plotly.express as px

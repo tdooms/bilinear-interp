@@ -9,7 +9,7 @@ import plotly.express as px
 import itertools
 
 from shared.relu import *
-from shared.model import *
+from shared.toy import *
 from shared.plotting import *
 from shared.projections import *
 # %%

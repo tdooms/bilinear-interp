@@ -13,7 +13,7 @@ However, in terms of interpretability, ReLUs are very difficult to study. Intuit
 
 This undesirable property of the ReLU has led to MLPs and similar structures being famously hard to interpret. As a consequence, several papers ([5], [6]) have used quadratic activation functions to perform theoretic analyses. Unfortunately, simple quadratic activation functions result in terrible accuracy due to as they do not lead to universal function approximators ([7]). However, as a substitute, it is possible to use bilinear activation functions. These functions posses appealing characteristic like the quadratic activations while being comparable to (and even surpassing) ReLUs in accuracy in large models as established in ([4]). Therefore, in this document, we make the design decision to replace ReLUs with the more interpretable bilinear layer. We provide an introduction to these layers and provide an overview of our current efforts in interpreting simple models using them.
 
-> The mentioned paper ([4]) has my favourite conclusion of any paper I have read ever: "*We offer no explanation as to why these architectures seem to work; we attribute their success, as all else, to divine benevolence*". In a sense, in this project, we aim to provide this divine explanation.
+> The mentioned paper ([4]) has my favourite conclusion of any paper I have ever read: "*We offer no explanation as to why these architectures seem to work; we attribute their success, as all else, to divine benevolence*". In a sense, in this project, we aim to provide this divine explanation.
 
 ### Bilinear Maps
 Like most things in life, bilinear maps are a very natural idea once one is familiar with it, but it can be a bit tricky to wrap your head around at first. If you're already familiar with the concept, you're free to skip this part, the next section covers how we use them in neural networks. What follows is a very intuitive explanation of bilinear maps, followed by a more mathematical definition.
@@ -28,7 +28,7 @@ A bilinear map is not so different, it takes in two vectors and returns a vector
 
 - The mathematical properties of a bilinear map are comparable to ordinary (scalar) multiplication. Multiplication takes in two numbers and returns another and each of the inputs is linear if we freeze the other.
 
-Importantly, while bilinear maps are linear to their inputs if the other is frozen, it is not linear in general. For instance, scalar multiplication is quadratic ($s(x, x) = x^2$). That said, let's get a bit into the weeds of the maths behind bilinear layers. A linear map $m$ satisfies the following properties:
+Importantly, while bilinear maps are linear to their inputs if the other is frozen, it is not linear in general. For instance, scalar multiplication is quadratic ($s(x, x) = x^2$). That said, let's get a bit into the weeds of the maths behind bilinear maps. Let's refresh the properties of a linear map $m$:
 $$m(\vec{u} + \vec{v}) = m(\vec{u}) + m(\vec{v})$$
 $$m(\lambda \vec{u}) = \lambda m(\vec{u})$$
 Where $\vec{u}$ and $\vec{v}$ are arbitrary vectors and $\lambda$ a scalar. These properties should feel quite natural, intuitively, it is possible to "pull out" any term out of the map. These maps mostly operate like normal numbers that everyone is used to work with. In contrast a bilinear map has the slightly more complicated constraints.
@@ -41,10 +41,10 @@ A normal layer in a neural network is structured as follows.
 $$h_{i+1} = ReLU(W_i h_i + b_i)$$
 We will study the following structure.
 $$h_{i+1} = (W_i h_i + b_i) \odot (V_i h_i + c_i)$$
-Here, $W_i$ and $V_i$ are matrices of the same dimensionality and $b_i$ and $c_i$ are biases. The $\odot$ denotes an element-wise product. The astute reader will probably notice that this is not at all a bilinear map; the biases make this non linear. However, without biases we cannot represent potentially essential operations such as the identity operation (seriously, try this if you don't believe me). In a further section we will solve this to have the best of both worlds. As lightly covered in the intro, there are a handful of reasons for studying this structure. 
+Here, $W_i$ and $V_i$ are matrices of the same dimensionality and $b_i$ and $c_i$ are biases. The $\odot$ denotes an element-wise product. The astute reader will probably notice that this is not at all a bilinear map; the biases make this non linear. However, without biases we cannot represent potentially essential operations such as the identity operation (seriously, try this if you don't believe me). In a further section we will solve this to have the best of both worlds. As lightly covered in the intro, there are a handful of reasons for studying this structure.
 #### 1) Linearizability
 Just as linear maps can be represented as a matrix, bilinear maps can be represented as a tensor. A matrix is simply a rank 2 tensor (sometimes called a 1-1 tensor, meaning 1 input dim and 1 output dim). 
-To describe bilinear maps, we need a rank 3 tensor (2 input dim and 1 output dim). While this tensor can become quite large, we can still employ very simple techniques to analyse this.
+To describe bilinear maps, we need a rank 3 tensor (2 input dim and 1 output dim). While this tensor can become quite large, we can still employ very simple techniques to analyze this.
 
 > I can't stress enough how important this is! We have a single mathematical object that represents the full computation of a layer. The main issue with a ReLU is that it requires to know the input to determine the output, which makes it extremely hard to define guarantees, this is completely obviated with this approach. Furthermore, the normal weight matrix is impossible to study because the ReLU may just change things around. This single object makes it possible to definitively make guarantees about behaviour and extract algorithms without ever evaluating the (single-layer) network.
 
@@ -61,13 +61,13 @@ Hopefully, by now the reader is convinced that this research direction merits ex
 Studying low-dimension toy models allows us to design interpretability techniques in a controlled environment (where the ground truth is known) to evaluate which approaches work best. This provides us with the building blocks on how these novel layers operate. The following is a simplified TODO list.
 
 - **Find the best layer composition to study.**
-	- [x] How can biases be integrated?
-	- [x] How can we visualise the tensor clearly?
-- **Fully explain arbitrary computation** 
+	- [x] How can weights and biases be integrated into one structure?
+	- [x] How can we visualise the full low-dimensional tensor?
+- **Fully explain arbitrary computation**
 	- [x] What operations can the model solve?
 	- [x] Can we extract the exact operations from the weights alone?
 - **Recreate and understand superposition.**
-	- [ ] Which geometric structures do they form?
+	- [x] Which geometric structures do they form?
 	- [x] When does the model exhibit this behaviour?
 	- [x] Can we extract superposition from the weights?
 - **Can the above tasks the performed in SVD?**
@@ -75,15 +75,18 @@ Studying low-dimension toy models allows us to design interpretability technique
 	- [ ] Can superposition still be extracted?
 	- [ ] Does this approach scale to compositions?
 
-##### High Dimensional
+### High Dimensional
 In high dimensional cases, the main goal is to decompose to more basic interpretable blocks. These "interpretable blocks" are often referred to as features.
 
 The difficulty of this study mostly lies not in the extraction of features, as is the case with ReLUs but in how to decompose them. Intuitively, due to the linearity, the high dimensional space can be manipulated to our wishes, but we don't yet know what our wishes for interpretability are. The following is a tentative list on how to get there (but were not fully sure yet).
 
-- **How to apply SVD**
-	- [ ] bla
-	- [ ] bla
-- 
+- **SVD**
+	- [ ] Study the Q matrix
+- **SAE**
+  - [ ] Pseudo-inverse tick
+  - [ ] SAE on the weights
+  - [ ] SAE on the activations
+
 ## Setup
 
 ### Model Tensors

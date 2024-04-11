@@ -2,7 +2,7 @@
 %load_ext autoreload
 %autoreload 2
 # %%
-from shared.model import *
+from shared.toy import *
 from shared.plotting import *
 from einops import *
 
