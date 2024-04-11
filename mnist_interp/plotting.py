@@ -52,9 +52,6 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     else:
         Q = svd.V[:,svd_comp].reshape(len(idxs), len(idxs))
 
-    eig_indices = torch.arange(topk_eigs).to(device)
-    eig_indices = torch.cat([-eig_indices-1, eig_indices])
-
     eigvals, eigvecs = torch.linalg.eigh(Q)
     eigvec_signs = eigvecs.sum(dim=0).sign()
     eigvecs = eigvecs * eigvec_signs.unsqueeze(0)
@@ -73,8 +70,11 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
         title_fn = lambda x,y: f"Eig={x:.2f}"
         mean_acts = torch.ones(img_size[0]*img_size[1])
 
+    eig_indices = torch.arange(topk_eigs).to(device)
+    eig_indices = torch.cat([-eig_indices-1, eig_indices])
     eigvals = eigvals[eig_indices]
     eigvecs = eigvecs[:,eig_indices]
+    mean_acts = mean_acts[:,eig_indices]
     Q_img[:,idxs] = eigvecs.T
     Q_max = 0.9 * Q_img[torch.logical_not(Q_img.isnan())].abs().max()
 
