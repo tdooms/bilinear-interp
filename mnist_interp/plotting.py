@@ -30,7 +30,7 @@ def plot_B_tensor_image_eigenvectors(B,  idx, **kwargs):
 
 def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10),
-    title = 'SVD Component', vmax=None):
+    title = 'SVD Component', vmax=None, data_loader = None, sort='eigs'):
     
     device = svd.V.device
     if idxs is None:
@@ -52,14 +52,29 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     else:
         Q = svd.V[:,svd_comp].reshape(len(idxs), len(idxs))
 
-    eig_indices = torch.arange(topk_eigs).to(device)
-    eig_indices = torch.cat([-eig_indices-1, eig_indices])
-
-    eig = torch.linalg.eigh(Q)
-    eigvals = eig.eigenvalues[eig_indices]
-    eigvecs = eig.eigenvectors[:,eig_indices]
+    eigvals, eigvecs = torch.linalg.eigh(Q)
     eigvec_signs = eigvecs.sum(dim=0).sign()
     eigvecs = eigvecs * eigvec_signs.unsqueeze(0)
+    
+    if data_loader is not None:
+        mean_acts = get_mean_activations(eigvecs, eigvals, data_loader)
+        if sort == 'activations':
+            mean_acts_idxs = mean_acts.argsort()
+            mean_acts = mean_acts[mean_acts_idxs]
+            eigvecs = eigvecs[:,mean_acts_idxs]
+            eigvals = eigvals[mean_acts_idxs]
+            title_fn = lambda x,y: f"Mean Act={y:.2f}, Eig={x:.2f}"
+        else:
+            title_fn = lambda x,y: f"Eig={x:.2f}, Mean Act={y:.2f}"
+    else:
+        title_fn = lambda x,y: f"Eig={x:.2f}"
+        mean_acts = torch.ones(img_size[0]*img_size[1])
+
+    eig_indices = torch.arange(topk_eigs).to(device)
+    eig_indices = torch.cat([-eig_indices-1, eig_indices])
+    eigvals = eigvals[eig_indices]
+    eigvecs = eigvecs[:,eig_indices]
+    mean_acts = mean_acts[eig_indices]
     Q_img[:,idxs] = eigvecs.T
     Q_max = 0.9 * Q_img[torch.logical_not(Q_img.isnan())].abs().max()
 
@@ -88,7 +103,7 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
         plt.subplot(2, topk_eigs + 1, 1 + (i+1))
         
         plt.imshow(Q_img[i].reshape(img_size[0], img_size[1]).cpu().detach().numpy(), cmap='RdBu', vmin=-vmax, vmax=vmax)
-        plt.title(f'eig = {eigvals[i]:.2f}', fontsize=20)
+        plt.title(title_fn(eigvals[i], mean_acts[i]), fontsize=16)
         plt.xticks([])
         plt.yticks([])
         if i == topk_eigs-1:
@@ -99,7 +114,7 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     for i in range(topk_eigs):
         plt.subplot(2, topk_eigs + 1, topk_eigs + 2 + (i+1))
         plt.imshow(Q_img[topk_eigs + i].reshape(img_size).cpu().detach().numpy(), cmap='RdBu', vmin=-vmax, vmax=vmax)
-        plt.title(f'eig = {eigvals[topk_eigs + i]:.2f}', fontsize=20)
+        plt.title(title_fn(eigvals[topk_eigs+i], mean_acts[topk_eigs+i]), fontsize=16)
         plt.xticks([])
         plt.yticks([])
         if i == topk_eigs-1:
@@ -109,13 +124,20 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     plt.subplot(2,topk_eigs+1, topk_eigs + 2)
     plt.axis('off')
 
-    plt.figtext(0.05,0.98,f"{title}", va="center", ha="left", size=28)
+    plt.figtext(0.05,0.98,f"{title}", va="center", ha="left", size=25)
     x = (1 + 0.5 * topk_eigs) / (1 + topk_eigs)
     plt.figtext(x,0.96,"Eigenvectors", va="center", ha="center", size=24)
     plt.show()
 
-    
 
+def get_mean_activations(eigvecs, eigvals, data_loader, img_size=(28,28)):
+    acts_list = []
+    for images, labels in data_loader:
+        images = images.reshape(-1, img_size[0]*img_size[1])
+        acts = eigvals * (images @ eigvecs)**2
+        acts_list.append(acts)
+    acts = torch.cat(acts_list, dim=0)
+    return acts.mean(dim=0)
 
 def plot_full_svd_component_for_image_with_bias(model, svd, svd_comp, idxs, 
     topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10),
