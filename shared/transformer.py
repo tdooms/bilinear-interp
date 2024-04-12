@@ -195,7 +195,7 @@ class Transformer(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
-        self.tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{config.n_vocab}-uncased", pad_token="[PAD]")
+        self.tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{config.n_vocab}-uncased", pad_token="[EOS]")
         
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.n_vocab, config.d_model),
@@ -380,7 +380,7 @@ class Transformer(PreTrainedModel):
             # append sampled index to the running sequence and continue
             input_ids = torch.cat((input_ids, next_id), dim=1)
 
-        out = self.tokenizer.decode(input_ids[0], skip_special_tokens=True)
+        out = self.tokenizer.decode(input_ids[0], skip_special_tokens=False)
 
         if clean:
             out = out.replace(" ##", "")

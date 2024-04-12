@@ -37,7 +37,7 @@ def make_be(
     e: Float[Tensor, "... embed features"],
     b: Float[Tensor, "... unembed embed embed"],
 ):
-    # e = torch.stack([torch.block_diag(e[i], torch.tensor([1])) for i in range(e.size(0))], dim=0)
+    e = torch.stack([torch.block_diag(e[i], torch.tensor([1])) for i in range(e.size(0))], dim=0)
     return einsum(b, e, e, '... unembed embed1 embed2, ... embed1 features1, ... embed2 features2 -> ... unembed features1 features2').detach()
 
 

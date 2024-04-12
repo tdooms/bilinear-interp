@@ -12,7 +12,7 @@ model = Transformer(config)
 model.summary()
 # %%
 
-# train_transformer(model)
+trainer = train_transformer(model)
 
 # %%
 
@@ -24,3 +24,4 @@ model = Transformer.from_pretrained(name, config=config)
 model.generate("The frog and the lizard")
 
 # %%
+

@@ -42,44 +42,45 @@ class Computation(ToyModel):
         return repeat(accum, f"x -> {cfg.n_instances} {cfg.n_outputs} x")
     
     def weights_to_formula(self):
-        w = model.b
+        w = model.ube
         p = torch.tensor(list(itertools.combinations(range(cfg.n_features), 2)))
 
         F, B = torch.arange(p.size(0)), -torch.ones(p.size(0), dtype=torch.long)
         X, Y = p[:, 0], p[:, 1]
         
-        t_xx = w[:, F, B, B]
-        t_xy = w[:, F, X, X] + 2*w[:, F, X, B] + w[:, F, B, B]
-        t_yx = w[:, F, Y, Y] + 2*w[:, F, Y, B] + w[:, F, B, B]
-        t_yy = w[:, F, X, X] + w[:, F, Y, Y] + 2*w[:, F, X, Y] + 2*w[:, F, X, B] + 2*w[:, F, Y, B] + w[:, F, B, B]
+        t_00 = w[:, F, B, B]
+        t_10 = w[:, F, X, X] + 2*w[:, F, X, B] + w[:, F, B, B]
+        t_01 = w[:, F, Y, Y] + 2*w[:, F, Y, B] + w[:, F, B, B]
+        t_11 = w[:, F, X, X] + w[:, F, Y, Y] + 2*w[:, F, X, Y] + 2*w[:, F, X, B] + 2*w[:, F, Y, B] + w[:, F, B, B]
 
-        return torch.stack([t_xx, t_xy, t_yx, t_yy], dim=-1)   
+        return torch.stack([t_00, t_10, t_01, t_11], dim=-1)   
         
     
     def forward(self, x):
         return super().forward(x.float())
 
-cfg = ToyConfig(n_epochs=2_000, n_embed=2, n_features=4, n_unembed=6, n_outputs=6, embed=polygon, unembed=identity, task={"xor": 1})
+cfg = ToyConfig(n_epochs=5_000, n_embed=4, n_features=4, n_unembed=6, n_outputs=6, task={"and": 0.6, "xnor": 0.5})
+# cfg = ToyConfig(n_epochs=2_000, n_embed=4, n_features=4, n_unembed=6, n_outputs=6, embed=identity, unembed=identity, task={"xor": 1})
 
 model = Computation(cfg)
 model.train()[0]
 
 # %%
-plot_output_interaction(model.be[4])
+plot_output_interaction(model.b[4])
 # %%
-
-
-
+plot_instances_in_2d(model.e.transpose(-1, -2))
 # %%
 
 prediction = model.weights_to_formula()
 target = model.binary_truth_table()
 
 score = (prediction - target).pow(2).mean(-1)
-px.imshow(score, **COLOR, labels=dict(x="Feature", y="Instance"), title="AND + XNOR") \
+px.imshow(score, **COLOR, labels=dict(x="Feature", y="Instance"), title="0.6AND + 0.5XNOR") \
     .update_xaxes(tickvals=torch.arange(model.cfg.n_outputs)) \
     .update_yaxes(tickvals=torch.arange(model.cfg.n_instances)) \
     .update_layout(title_x=0.5)
+
+# px.imshow(prediction[0])
 
 # %%
 fig = plot_radial_interaction(model.b[4])

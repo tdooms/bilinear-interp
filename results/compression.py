@@ -13,14 +13,14 @@ class Superposition(ToyModel):
         super().__init__(cfg)
         assert cfg.n_unembed == cfg.n_outputs, "The unembed and output dimensions must be the same."
 
-cfg = ToyConfig(n_features=4, n_embed=4, n_unembed=4, n_outputs=4, unembed=identity)
+cfg = ToyConfig(n_epochs=3000, n_features=4, n_embed=2, n_unembed=4, n_outputs=4, unembed=identity)
 model = Superposition(cfg)
 model.train()[0]
 
 # %%
 plot_basis_predictions(model)
 # %%
-plot_output_interaction(model.be[-3])
+plot_output_interaction(model.b[-3])
 # %%
 plot_output_composition(model.ube)
 # %%

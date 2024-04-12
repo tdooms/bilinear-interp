@@ -93,7 +93,7 @@ class ToyModel(nn.Module):
         return generate_random(self.cfg, self.probability)
     
     def train(self, **kwargs):
-        return trainers.simple(self, self.cfg, **kwargs)
+        return trainers.train_toy(self, self.cfg, **kwargs)
     
     @property
     def b(self):
@@ -160,4 +160,4 @@ class ToyReLUModel(nn.Module):
         return generate_random(self.cfg, self.probability)
     
     def train(self, **kwargs):
-        return trainers.simple(self, self.cfg, **kwargs)
+        return trainers.train_toy(self, self.cfg, **kwargs)

@@ -44,17 +44,18 @@ def train_toy(model, cfg, per_instance=True):
 
 
 def train_transformer(model, report_to="wandb"):
-    tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{model.config.n_vocab}-uncased", pad_token="[PAD]")
+    tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{model.config.n_vocab}-uncased", pad_token="[EOS]")
 
     def tokenize(dataset):
         return tokenizer(dataset["text"], truncation=True, padding=True, max_length=256)
 
-    dataset = load_dataset("tdooms/TinyStories", split="train")
+    dataset = load_dataset("tdooms/TinyStories")
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
     accuracy = evaluate.load("accuracy")
 
-    tokenized_dataset = dataset.map(tokenize, batched=True, remove_columns=dataset.column_names)
+    tokenized_train = dataset["train"].map(tokenize, batched=True, remove_columns=dataset["train"].column_names)
+    tokenized_validation = dataset["validation"].map(tokenize, batched=True, remove_columns=dataset["validation"].column_names)
     
     training_args = TrainingArguments(
         # use_cpu=True,
@@ -71,7 +72,8 @@ def train_transformer(model, report_to="wandb"):
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_dataset,
+        train_dataset=tokenized_train,
+        eval_dataset=tokenized_validation,
         tokenizer=tokenizer,
         data_collator=data_collator,
         compute_metrics=accuracy,
