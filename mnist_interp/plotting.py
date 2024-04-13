@@ -14,7 +14,124 @@ def create_Q_from_upper_tri_idxs(Q_vec, idxs):
     Q[tril_indices[0],tril_indices[1]] = Q.T[tril_indices[0],tril_indices[1]]
     return Q
 
+class EigenvectorPlotter():
+    def __init__(self, B, logits, data_loader = None, img_size=(28,28)):
+        self.B = B      #[component, in1, in2]
+        self.logits = logits    #[component, out]
+        self.data_loader = data_loader
+        self.img_size = img_size
+
+    def plot_component(self, component, suptitle=None, topk_eigs = 3, sort='eigs', vmax=None, classes = None):
+        device = self.B.device
+        Q = self.B[component]
+        
+        eigvals, eigvecs = torch.linalg.eigh(Q)
+        eigvals_orig = eigvals.clone()
+        eigvec_signs = eigvecs.sum(dim=0).sign()
+        eigvecs = eigvecs * eigvec_signs.unsqueeze(0)
+
+        eigvecs, eigvals, mean_acts, title_fn = self.get_sorted_eigvecs_and_title(eigvecs, eigvals, sort)
+
+        #subset to topk positive and negative eigs
+        eig_indices = torch.arange(topk_eigs).to(device)
+        eig_indices = torch.cat([-eig_indices-1, eig_indices])
+        eigvals = eigvals[eig_indices]
+        eigvecs = eigvecs[:,eig_indices]
+        mean_acts = mean_acts[eig_indices]
+
+        #create image matrix
+        images = eigvecs.T
+        if vmax is None:
+            vmax = 0.9 * images[torch.logical_not(images.isnan())].abs().max()
+
+        #subplots
+        figsize = (4*(topk_eigs+1), 10)
+        plt.subplots(2, topk_eigs+1, figsize=figsize, dpi=300, layout="compressed",
+                    width_ratios=[1.05]+topk_eigs*[1], height_ratios=[1, 1]
+                    )
+        
+        #plot logits
+        plt.subplot(2, topk_eigs+1, 1)
+        self.plot_logits(component, classes)
+
+        #plot eigenval dist
+        plt.subplot(2, topk_eigs+1, topk_eigs+2)
+        self.plot_eigvals(eigvals_orig)
+
+        #plot positive eigenvalues
+        for i in range(topk_eigs):
+            plt.subplot(2, topk_eigs+1, 2+i)
+            title = title_fn(eigvals[i], mean_acts[i])
+            self.plot_eigenvector(images[i], i, topk_eigs, vmax, title=title)
+
+        #plot negative eigenvalues
+        for i in range(topk_eigs):
+            plt.subplot(2, topk_eigs + 1, topk_eigs + 2 + (i+1))
+            j = topk_eigs + i
+            title = title_fn(eigvals[j], mean_acts[j])
+            self.plot_eigenvector(images[j], i, topk_eigs, vmax, title=title)
+
+        plt.figtext(0.05,0.98,f"{suptitle}", va="center", ha="left", size=25)
+        x = (1 + 0.5 * topk_eigs) / (1 + topk_eigs)
+        plt.figtext(x,0.96,"Eigenvectors", va="center", ha="center", size=24)
+        plt.show()
+
+    def get_sorted_eigvecs_and_title(self, eigvecs, eigvals, sort):
+        if self.data_loader is not None:
+            mean_acts = self.get_mean_eigen_acts(eigvecs, eigvals, self.data_loader)
+            if sort == 'activations':
+                sort_idxs = mean_acts.argsort()
+                mean_acts = mean_acts[sort_idxs]
+                eigvecs = eigvecs[:,sort_idxs]
+                eigvals = eigvals[sort_idxs]
+                title_fn = lambda x,y: f"Mean Act={y:.2f}, Eig={x:.2f}"
+            else:
+                title_fn = lambda x,y: f"Eig={x:.2f}, Mean Act={y:.2f}"
+        else:
+            title_fn = lambda x,y: f"Eig={x:.2f}"
+            mean_acts = torch.ones(self.img_size[0]*self.img_size[1])
+        return eigvecs, eigvals, mean_acts, title_fn
+
+    @staticmethod
+    def get_mean_eigen_acts(eigvecs, eigvals, data_loader, img_size=(28,28)):
+        device = eigvecs.device
+        acts_list = []
+        for images, labels in data_loader:
+            images = images.reshape(-1, img_size[0]*img_size[1])
+            acts = eigvals * (images @ eigvecs)**2
+            acts_list.append(acts)
+        acts = torch.cat(acts_list, dim=0)
+        return acts.mean(dim=0)
+
+    def plot_logits(self, component, classes):
+        logits = self.logits[component]
+        if classes is None:
+            classes = torch.arange(len(logits))
+        plt.bar(range(len(classes)), logits.cpu().detach())
+        plt.title('Logit Outputs', fontsize=20)
+        plt.xticks(classes, fontsize=15)
+        plt.yticks(fontsize=15)
+        plt.xlabel('Classes', fontsize=18)
+        plt.ylabel('Logits', fontsize=18)
+
+    def plot_eigvals(self, eigvals):
+        plt.plot(eigvals, '.-')
+        plt.ylabel('Eigenvalues', fontsize=18)
+        plt.xlabel('Index', fontsize=18)
+
+    def plot_eigenvector(self, image, i, topk_eigs, vmax, title=None):
+        plt.imshow(image.reshape(*self.img_size).cpu().detach(), cmap='RdBu', vmin=-vmax, vmax=vmax)
+        if title:
+            plt.title(title, fontsize=15)
+        plt.xticks([])
+        plt.yticks([])
+        if i == topk_eigs-1:
+            cbar = plt.colorbar()
+            cbar.ax.tick_params(labelsize=14)
+
+
 def plot_B_tensor_image_eigenvectors(B,  idx, **kwargs):
+    #legacy
     class FakeSVD():
         def __init__(self):
             device = B.device
@@ -31,7 +148,7 @@ def plot_B_tensor_image_eigenvectors(B,  idx, **kwargs):
 def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10),
     title = 'SVD Component', vmax=None, data_loader = None, sort='eigs'):
-    
+
     device = svd.V.device
     if idxs is None:
         idxs = torch.arange(img_size[0] * img_size[1])
@@ -40,207 +157,34 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
 
     # logit outputs
     U_S = svd.U[:,svd_comp] * svd.S[svd_comp]
-    logits = W_out @ U_S
-
-    # quadratic images
-    Q_img = torch.zeros(2 * topk_eigs, img_size[0] * img_size[1]).to(device)
-    Q_img[:] = float('nan')
+    logits = (W_out @ U_S).unsqueeze(0)
 
     if upper_triangular:
         Q_vec = svd.V[:,svd_comp]
         Q = create_Q_from_upper_tri_idxs(Q_vec, idxs)
     else:
         Q = svd.V[:,svd_comp].reshape(len(idxs), len(idxs))
+    B = Q.unsqueeze(0)
 
-    eigvals, eigvecs = torch.linalg.eigh(Q)
-    eigvec_signs = eigvecs.sum(dim=0).sign()
-    eigvecs = eigvecs * eigvec_signs.unsqueeze(0)
-    
-    if data_loader is not None:
-        mean_acts = get_mean_activations(eigvecs, eigvals, data_loader)
-        if sort == 'activations':
-            mean_acts_idxs = mean_acts.argsort()
-            mean_acts = mean_acts[mean_acts_idxs]
-            eigvecs = eigvecs[:,mean_acts_idxs]
-            eigvals = eigvals[mean_acts_idxs]
-            title_fn = lambda x,y: f"Mean Act={y:.2f}, Eig={x:.2f}"
-        else:
-            title_fn = lambda x,y: f"Eig={x:.2f}, Mean Act={y:.2f}"
-    else:
-        title_fn = lambda x,y: f"Eig={x:.2f}"
-        mean_acts = torch.ones(img_size[0]*img_size[1])
-
-    eig_indices = torch.arange(topk_eigs).to(device)
-    eig_indices = torch.cat([-eig_indices-1, eig_indices])
-    eigvals = eigvals[eig_indices]
-    eigvecs = eigvecs[:,eig_indices]
-    mean_acts = mean_acts[eig_indices]
-    Q_img[:,idxs] = eigvecs.T
-    Q_max = 0.9 * Q_img[torch.logical_not(Q_img.isnan())].abs().max()
-
-    # subplots
-    figsize = (4*(topk_eigs+1), 10)
-    plt.subplots(2, topk_eigs+1, figsize=figsize, dpi=150, layout="compressed",
-                 width_ratios=[1.05]+topk_eigs*[1], height_ratios=[1, 1]
-                )
-
-    # logit plot
-    plt.subplot(2, topk_eigs + 1, 1)
-    plt.bar(classes, logits.cpu().detach().numpy())
-    plt.title('Logit Outputs', fontsize=20)
-    plt.xticks(classes, fontsize=15)
-    plt.yticks(fontsize=15)
-    plt.xlabel('Classes', fontsize=18)
-    plt.ylabel('Logits', fontsize=18)
-
-    if vmax is not None:
-        vmax = vmax
-    else:
-        vmax = Q_max
-
-    # positive eigenvals plot
-    for i in range(topk_eigs):
-        plt.subplot(2, topk_eigs + 1, 1 + (i+1))
-        
-        plt.imshow(Q_img[i].reshape(img_size[0], img_size[1]).cpu().detach().numpy(), cmap='RdBu', vmin=-vmax, vmax=vmax)
-        plt.title(title_fn(eigvals[i], mean_acts[i]), fontsize=16)
-        plt.xticks([])
-        plt.yticks([])
-        if i == topk_eigs-1:
-            cbar = plt.colorbar()
-            cbar.ax.tick_params(labelsize=14) 
-
-    # negative eigenvals plot
-    for i in range(topk_eigs):
-        plt.subplot(2, topk_eigs + 1, topk_eigs + 2 + (i+1))
-        plt.imshow(Q_img[topk_eigs + i].reshape(img_size).cpu().detach().numpy(), cmap='RdBu', vmin=-vmax, vmax=vmax)
-        plt.title(title_fn(eigvals[topk_eigs+i], mean_acts[topk_eigs+i]), fontsize=16)
-        plt.xticks([])
-        plt.yticks([])
-        if i == topk_eigs-1:
-            cbar = plt.colorbar()
-            cbar.ax.tick_params(labelsize=14) 
-
-    plt.subplot(2,topk_eigs+1, topk_eigs + 2)
-    plt.axis('off')
-
-    plt.figtext(0.05,0.98,f"{title}", va="center", ha="left", size=25)
-    x = (1 + 0.5 * topk_eigs) / (1 + topk_eigs)
-    plt.figtext(x,0.96,"Eigenvectors", va="center", ha="center", size=24)
-    plt.show()
+    Plotter = EigenvectorPlotter(B, logits, data_loader = data_loader, img_size=img_size)
+    Plotter.plot_component(0, suptitle=title, topk_eigs=topk_eigs, sort=sort, vmax=vmax, classes=classes)
 
 
-def get_mean_activations(eigvecs, eigvals, data_loader, img_size=(28,28)):
-    acts_list = []
-    for images, labels in data_loader:
-        images = images.reshape(-1, img_size[0]*img_size[1])
-        acts = eigvals * (images @ eigvecs)**2
-        acts_list.append(acts)
-    acts = torch.cat(acts_list, dim=0)
-    return acts.mean(dim=0)
 
-def plot_full_svd_component_for_image_with_bias(model, svd, svd_comp, idxs, 
-    topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10),
-    title = 'SVD Component'):
-    
-    device = svd.V.device
-    idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(idxs,2))).to(device)
-    bias_idx = idxs[-1]
-        
-    # get indices for quadratic and linear terms
-    QQ_idx_pairs = torch.logical_and(idx_pairs[:,0] != bias_idx, idx_pairs[:,1] != bias_idx)
-    QL_idx_pairs = torch.logical_and(idx_pairs[:,0] != bias_idx, idx_pairs[:,1] == bias_idx)
-    LL_idx_pairs = torch.logical_and(idx_pairs[:,0] == bias_idx, idx_pairs[:,1] == bias_idx)
-
-    # logit outputs
-    U_S = svd.U[:,svd_comp] * svd.S[svd_comp]
-    logits = model.linear_out.weight @ U_S
-
-    # linear images
-    L_img = torch.zeros(img_size[0] * img_size[1]).to(device)
-    L_img[:] = float('nan')
-    L_img[idxs[:-1]] = svd.V[QL_idx_pairs,svd_comp]
-
-    # quadratic images
-    Q_img = torch.zeros(2 * topk_eigs, img_size[0] * img_size[1]).to(device)
-    Q_img[:] = float('nan')
-
-    if upper_triangular:
-        Q_vec = svd.V[QQ_idx_pairs,svd_comp]
-        Q = create_Q_from_upper_tri_idxs(Q_vec, idxs[:-1])
-    else:
-        Q = svd.V[QQ_idx_pairs,svd_comp].reshape(len(idxs)-1, len(idxs)-1)
-
-    eig_indices = torch.arange(topk_eigs).to(device)
-    eig_indices = torch.cat([-eig_indices-1, eig_indices])
-
-    eig = torch.linalg.eigh(Q)
-    eigvals = eig.eigenvalues[eig_indices]
-    eigvecs = eig.eigenvectors[:,eig_indices]
-    eigvec_signs = eigvecs.sum(dim=0).sign()
-    eigvecs = eigvecs * eigvec_signs.unsqueeze(0)
-    Q_img[:,idxs[:-1]] = eigvecs.T
-    Q_max = 0.9 * Q_img[torch.logical_not(Q_img.isnan())].abs().max()
-
-    # subplots
-    plt.subplots(2,topk_eigs+1, figsize=(20,10), dpi=150, layout="compressed",
-                #  width_ratios=[1.05]+topk_eigs*[1], height_ratios=[1, 1]
-                )
-
-    # logit plot
-    plt.subplot(2, topk_eigs + 1, 1)
-    plt.bar(classes, logits.cpu().detach().numpy())
-    plt.title('Logit Outputs', fontsize=20)
-    plt.xticks(classes, fontsize=15)
-    plt.yticks(fontsize=15)
-    plt.xlabel('Classes', fontsize=18)
-    plt.ylabel('Logits', fontsize=18)
-
-    # positive eigenvals plot
-    for i in range(topk_eigs):
-        plt.subplot(2, topk_eigs + 1, 1 + (i+1))
-        plt.imshow(Q_img[i].reshape(img_size[0], img_size[1]).cpu().detach().numpy(), cmap='RdBu', vmin=-Q_max, vmax=Q_max)
-        plt.title(f'eig = {eigvals[i]:.2f}', fontsize=20)
-        plt.xticks([])
-        plt.yticks([])
-        if i == topk_eigs-1:
-            cbar = plt.colorbar()
-            cbar.ax.tick_params(labelsize=14) 
-
-
-    # linear term plot
-    plt.subplot(2, topk_eigs + 1, topk_eigs + 2)
-    # L_scale = Q_max**2 * np.sqrt(len(idxs))
-    plt.imshow(L_img.reshape(img_size).cpu().detach().numpy(), cmap='RdBu')
-    plt.xticks([])
-    plt.yticks([])
-    cbar = plt.colorbar()
-    cbar.ax.tick_params(labelsize=14) 
-    plt.title('Linear Term', fontsize=20)
-
-    # negative eigenvals plot
-    for i in range(topk_eigs):
-        plt.subplot(2, topk_eigs + 1, topk_eigs + 2 + (i+1))
-        plt.imshow(Q_img[topk_eigs + i].reshape(img_size).cpu().detach().numpy(), cmap='RdBu', vmin=-Q_max, vmax=Q_max)
-        plt.title(f'eig = {eigvals[topk_eigs + i]:.2f}', fontsize=20)
-        plt.xticks([])
-        plt.yticks([])
-        if i == topk_eigs-1:
-            cbar = plt.colorbar()
-            cbar.ax.tick_params(labelsize=14) 
-
-    plt.figtext(0.05,0.96,f"{title} {svd_comp}", va="center", ha="left", size=28)
-    plt.figtext(0.6,0.94,"Eigenvectors", va="center", ha="center", size=24)
-
-def plot_topk_model_bottleneck(model, svds, topK_list, test_loader, 
-    input_idxs, svd_components, sing_val_type, print_bool = False):
+def plot_topk_model_bottleneck(model, svds, sing_val_type, svd_components, topK_list, test_loader, 
+    input_idxs = None, print_bool = False, device=None, rms_norm = None):
 
     accuracy_dict = defaultdict(list)
     for layer in tqdm(range(len(model.layers))):
         for topK in tqdm(topK_list, leave=False):
             topKs = [svd_components] * len(model.layers)
             topKs[layer] = topK
-            topk_model = get_topK_model(model, svds, topKs, input_idxs, svd_components, sing_val_type)
+            topk_model = BilinearModelTopK(model, svds, sing_val_type, input_idxs=input_idxs)
+            if rms_norm is not None:
+                topk_model.cfg.rms_norm = rms_norm
+            topk_model.set_parameters(topKs)
+            if device is not None:
+                topk_model = topk_model.to(device)
             accuracy = topk_model.validation_accuracy(test_loader, print_acc=False)
             accuracy_dict[layer].append(accuracy)
             if print_bool:
