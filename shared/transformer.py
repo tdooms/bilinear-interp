@@ -50,12 +50,12 @@ class Vocab:
     def tokenize(self, indices):
         return [self.vocab.inv[i.item()] for i in indices]
     
-    def get_max_activations(self, tensor, axes, k=10, largest=True):
+    def get_max_activations(self, tensor, axes, k=10, largest=True, val_name="value"):
         top = torch.topk(tensor.flatten(), k=k, largest=largest)
         dims = torch.unravel_index(top.indices, tensor.size())
         
         data = {k: self.tokenize(v.cpu()) for k, v in zip(axes, dims)}
-        data["value"] = top.values.cpu()
+        data[val_name] = top.values.cpu()
         
         return pd.DataFrame(data)
     
@@ -208,6 +208,8 @@ class Transformer(PreTrainedModel):
         self.lm_head = nn.Linear(config.d_model, config.n_vocab, bias=False)
         self.criterion = nn.CrossEntropyLoss()
         
+        # self.transformer.wte.weight = self.lm_head.weight
+        
         # Haven't studied this, it reduces the loss from ~1.8 to ~1.7 on 10% training data.
         self.apply(self._init_weights)
 
@@ -223,6 +225,7 @@ class Transformer(PreTrainedModel):
         pos = torch.arange(0, input_ids.size(1), dtype=torch.long, device=input_ids.device)
 
         embed = self.transformer.wte(input_ids) + self.transformer.wpe(pos)
+        embed = self.transformer.wte(input_ids)
         x = self.transformer.drop(embed)
         
         for layer in self.transformer.h:
@@ -230,12 +233,17 @@ class Transformer(PreTrainedModel):
         
         x = self.transformer.n_f(x)
         logits = self.lm_head(x)
-        shifted_logits = logits[..., :-1, :].contiguous()
         
         if labels is None:
             return CausalLMOutput(logits=logits)
         else:
             shifted_labels = labels[..., 1:].contiguous()
+            print("labels", shifted_labels.shape, labels.shape)
+            shifted_logits = logits[..., :-1, :].contiguous()
+            print("logits", shifted_logits.shape, logits.shape)
+            
+            print("viewed", shifted_logits.view(-1, logits.size(-1)).shape, shifted_labels.view(-1).shape)
+            
             loss = self.criterion(shifted_logits.view(-1, logits.size(-1)), shifted_labels.view(-1))
             return CausalLMOutput(loss=loss, logits=logits)
     
@@ -361,7 +369,7 @@ class Transformer(PreTrainedModel):
 
     @torch.no_grad()
     def generate(self, prompt, max_length=None, temperature=1.0, top_k=None, clean=True):
-        input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
+        input_ids = self.tokenizer.encode(prompt, return_tensors="pt")[..., :-1].to(self.device)
         max_length = min(max_length or self.config.n_ctx, self.config.n_ctx - input_ids.size(-1) - 1)
         
         for _ in range(max_length):

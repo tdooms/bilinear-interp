@@ -1,33 +1,11 @@
 # %%
 
-from tokenizers import Tokenizer, normalizers, pre_tokenizers
-from tokenizers.models import WordPiece
-from tokenizers.trainers import WordPieceTrainer
-from tokenizers.pre_tokenizers import Whitespace, Digits, Punctuation
-from tokenizers.normalizers import NFD, StripAccents, Lowercase, Replace
+
 from datasets import load_dataset
 from transformers import PreTrainedTokenizerFast, AutoTokenizer
-from tokenizers.processors import TemplateProcessing
 
 import plotly.express as px
 
-
-# %%
-vocab_size = 4096
-dataset = load_dataset("tdooms/TinyStories", split="train")
-
-normalizer = normalizers.Sequence([NFD(), StripAccents(), Lowercase()])
-pre_tokenizer = pre_tokenizers.Sequence([Punctuation(), Whitespace(), Digits(individual_digits=True)])
-post_processor = TemplateProcessing(single="[BOS] $A [EOS]", special_tokens=[("[BOS]", 1), ("[EOS]", 2)])
-
-tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
-tokenizer.normalizer = normalizer
-tokenizer.pre_tokenizer = pre_tokenizer
-tokenizer.post_processor = post_processor
-
-trainer = WordPieceTrainer(vocab_size=vocab_size, special_tokens=["[UNK]", "[BOS]", "[EOS]"])
-tokenizer.train_from_iterator(dataset["text"], trainer=trainer)
-tokenizer.save(f"stories-{vocab_size}.json")
 
 # %%
 
