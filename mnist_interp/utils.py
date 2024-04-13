@@ -62,15 +62,16 @@ def compute_symmetric_svd(W, V, idxs = None, return_B = False):
         return svd
 
 def compute_svds_for_deep_model(model, svd_components, input_idxs = None,
-    svd_type='symmetric', sing_val_type='with R', bias = False):
+    svd_type='symmetric', sing_val_type='with R', bias = False, device = None):
     
-    device = model.layers[0].linear1.weight.device
+    if device is None:
+        device = model.layers[0].linear1.weight.device
     svds = [None] * len(model.layers)
     for layer_idx, layer in enumerate(model.layers):
         if layer_idx == 0:
             idxs = input_idxs
-            W = layer.linear1.weight
-            V = layer.linear2.weight
+            W = layer.linear1.weight.to(device).detach()
+            V = layer.linear2.weight.to(device).detach()
         else:
             R = svds[layer_idx-1].U[:,:svd_components]
             if sing_val_type == 'with R':
@@ -81,9 +82,9 @@ def compute_svds_for_deep_model(model, svd_components, input_idxs = None,
                 ones = torch.ones(1).to(device)
                 R = torch.block_diag(R, ones)
             else:
-                idxs = torch.arange(svd_components).to(device)
-            W = layer.linear1.weight @ R
-            V = layer.linear2.weight @ R
+                idxs = torch.arange(svd_components).to(device) if input_idxs is not None else None
+            W = layer.linear1.weight.to(device).detach() @ R
+            V = layer.linear2.weight.to(device).detach() @ R
 
         if svd_type == 'symmetric':
             svd = compute_symmetric_svd(W, V, idxs=idxs)
