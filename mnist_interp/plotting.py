@@ -21,23 +21,22 @@ class EigenvectorPlotter():
         self.data_loader = data_loader
         self.img_size = img_size
 
-    def plot_component(self, component, suptitle=None, topk_eigs = 3, sort='eigs', vmax=None, classes = None):
+    def plot_component(self, component, suptitle=None, topk_eigs = 3, sort='eigs', 
+        vmax=None, classes = None, **kwargs):
         device = self.B.device
         Q = self.B[component]
         
         eigvals, eigvecs = torch.linalg.eigh(Q)
         eigvals_orig = eigvals.clone()
-        eigvec_signs = eigvecs.sum(dim=0).sign()
-        eigvecs = eigvecs * eigvec_signs.unsqueeze(0)
 
-        eigvecs, eigvals, mean_acts, title_fn = self.get_sorted_eigvecs_and_title(eigvecs, eigvals, sort)
+        if self.data_loader is not None:
+            mean_acts, avg_sims = self.get_mean_eigen_acts(eigvecs, eigvals, self.data_loader)
+        else:
+            mean_acts, avg_sims = torch.ones(self.img_size[0]*self.img_size[1]), None  
 
-        #subset to topk positive and negative eigs
-        eig_indices = torch.arange(topk_eigs).to(device)
-        eig_indices = torch.cat([-eig_indices-1, eig_indices])
-        eigvals = eigvals[eig_indices]
-        eigvecs = eigvecs[:,eig_indices]
-        mean_acts = mean_acts[eig_indices]
+        title_fn = self.get_title_fn(sort)
+
+        eigvecs, eigvals, mean_acts = self.select_eigvecs(topk_eigs, sort, eigvecs, eigvals, mean_acts, avg_sims)
 
         #create image matrix
         images = eigvecs.T
@@ -62,46 +61,68 @@ class EigenvectorPlotter():
         for i in range(topk_eigs):
             plt.subplot(2, topk_eigs+1, 2+i)
             title = title_fn(eigvals[i], mean_acts[i])
-            self.plot_eigenvector(images[i], i, topk_eigs, vmax, title=title)
+            self.plot_eigenvector(images[i], i, topk_eigs, vmax, title=title, **kwargs)
 
         #plot negative eigenvalues
         for i in range(topk_eigs):
             plt.subplot(2, topk_eigs + 1, topk_eigs + 2 + (i+1))
             j = topk_eigs + i
             title = title_fn(eigvals[j], mean_acts[j])
-            self.plot_eigenvector(images[j], i, topk_eigs, vmax, title=title)
+            self.plot_eigenvector(images[j], i, topk_eigs, vmax, title=title, **kwargs)
 
         plt.figtext(0.05,0.98,f"{suptitle}", va="center", ha="left", size=25)
         x = (1 + 0.5 * topk_eigs) / (1 + topk_eigs)
         plt.figtext(x,0.96,"Eigenvectors", va="center", ha="center", size=24)
         plt.show()
 
-    def get_sorted_eigvecs_and_title(self, eigvecs, eigvals, sort):
-        if self.data_loader is not None:
-            mean_acts = self.get_mean_eigen_acts(eigvecs, eigvals, self.data_loader)
-            if sort == 'activations':
-                sort_idxs = mean_acts.argsort()
-                mean_acts = mean_acts[sort_idxs]
-                eigvecs = eigvecs[:,sort_idxs]
-                eigvals = eigvals[sort_idxs]
-                title_fn = lambda x,y: f"Mean Act={y:.2f}, Eig={x:.2f}"
-            else:
-                title_fn = lambda x,y: f"Eig={x:.2f}, Mean Act={y:.2f}"
-        else:
-            title_fn = lambda x,y: f"Eig={x:.2f}"
-            mean_acts = torch.ones(self.img_size[0]*self.img_size[1])
-        return eigvecs, eigvals, mean_acts, title_fn
-
     @staticmethod
     def get_mean_eigen_acts(eigvecs, eigvals, data_loader, img_size=(28,28)):
         device = eigvecs.device
         acts_list = []
+        sims_list = []
         for images, labels in data_loader:
             images = images.reshape(-1, img_size[0]*img_size[1])
+            sims = (images @ eigvecs)
             acts = eigvals * (images @ eigvecs)**2
             acts_list.append(acts)
+            sims_list.append(sims)
         acts = torch.cat(acts_list, dim=0)
-        return acts.mean(dim=0)
+        sims = torch.cat(sims_list, dim=0)
+        return acts.mean(dim=0), sims.mean(dim=0)
+
+    def get_title_fn(self, sort):
+        if self.data_loader is not None:
+            if sort == 'activations':
+                return lambda x,y: f"Mean Act={y:.2f}, Eig={x:.2f}"
+            else:
+                return lambda x,y: f"Eig={x:.2f}, Mean Act={y:.2f}"
+        else:
+            title_fn = lambda x,y: f"Eig={x:.2f}"
+    
+    def select_eigvecs(self, topk_eigs, sort, eigvecs, eigvals, mean_acts, avg_sims):
+        #flip sign of eigvecs
+        if avg_sims is not None:
+            signs = avg_sims.sign()
+        else:
+            signs = eigvecs.sum(dim=0).sign()
+        eigvecs = eigvecs * signs.unsqueeze(0)
+        
+        #sort
+        if (self.data_loader is not None) and (sort=='activations'):
+            sort_idxs = mean_acts.argsort()
+        else:
+            sort_idxs = eigvals.argsort()
+        eigvecs = eigvecs[sort_idxs]
+        eigvals = eigvals[sort_idxs]
+        mean_acts = mean_acts[sort_idxs]
+
+        #subset to topk positive and negative eigs
+        eig_indices = torch.arange(topk_eigs).to(eigvecs.device)
+        eig_indices = torch.cat([-eig_indices-1, eig_indices])
+        eigvals = eigvals[eig_indices]
+        eigvecs = eigvecs[:,eig_indices]
+        mean_acts = mean_acts[eig_indices]
+        return eigvecs, eigvals, mean_acts
 
     def plot_logits(self, component, classes):
         logits = self.logits[component]
@@ -119,8 +140,14 @@ class EigenvectorPlotter():
         plt.ylabel('Eigenvalues', fontsize=18)
         plt.xlabel('Index', fontsize=18)
 
-    def plot_eigenvector(self, image, i, topk_eigs, vmax, title=None):
-        plt.imshow(image.reshape(*self.img_size).cpu().detach(), cmap='RdBu', vmin=-vmax, vmax=vmax)
+    def plot_eigenvector(self, image, i, topk_eigs, vmax, title=None, **kwargs):        
+        if 'cmap' not in kwargs:
+            kwargs['cmap'] = 'RdBu_r'
+        if 'norm' in kwargs:
+            plt.imshow(image.reshape(*self.img_size).cpu().detach(), **kwargs)
+        else:
+            plt.imshow(image.reshape(*self.img_size).cpu().detach(), 
+            vmin=-vmax, vmax=vmax, **kwargs)
         if title:
             plt.title(title, fontsize=15)
         plt.xticks([])
