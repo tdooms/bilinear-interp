@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import einops
 import numpy as np
+import copy
 
 class MnistConfig:
     """A configuration class for MNIST models"""
@@ -176,7 +177,6 @@ class BilinearTopK(torch.nn.Module):
     def __init__(self, B, requires_grad = False, norm = True, bias = False):
         super().__init__()
         self.B = torch.nn.Parameter(B, requires_grad=requires_grad)
-        self.device = B.device
         self.out = None
         self.bias = bias
 
@@ -185,11 +185,16 @@ class BilinearTopK(torch.nn.Module):
           self.rms_norm = RmsNorm()
 
     def forward(self, x):
+        device = self.B.device
+        if x.device != device:
+            x = x.to(device)
+
         if self.bias:
-            ones =  torch.ones(x.size(0), 1).to(self.device)
+            ones =  torch.ones(x.size(0), 1).to(device)
             self.input = torch.cat((x, ones), dim=-1)
         else:
             self.input = x
+
         self.out_prenorm = einops.einsum(self.input, self.B, self.input, 'b d0, s d0 d1, b d1 -> b s')
         if self.norm:
             self.out = self.rms_norm(self.out_prenorm)
@@ -199,30 +204,106 @@ class BilinearTopK(torch.nn.Module):
 
 class BilinearModelTopK(torch.nn.Module):
     # TODO: make validation_accuracy work for non-image datasets
-    def __init__(self, B_tensors, W_out, bias_out, input_idxs, norm = True, bias = False):
+    def __init__(self, model, svds, sing_val_type, input_idxs = None):
         super().__init__()
+        self.svds = svds
+        self.sing_val_type = sing_val_type
+
+        self.cfg = copy.deepcopy(model.cfg)
+        self.device = svds[0].V.device
+        self.W_out = model.linear_out.weight.detach().to(self.device)
+        self.bias_out = model.linear_out.bias.detach().to(self.device)
+        self.final_norm = model.cfg.rms_norm
+        
         self.input_idxs = input_idxs
-        self.device = W_out.device
-        self.norm = norm
-        if norm:
-          self.rms_norm = RmsNorm()
-        self.bias = bias
+
+        if self.cfg.rms_norm:
+            self.rms_norm = RmsNorm()
+
+    def set_parameters(self, topKs):
+        B_tensors, R_tensors = self.get_tensors(topKs)
+        W_out = self.W_out @ R_tensors[-1]
+        bias_out = self.bias_out
 
         layers = []
         for layer_idx, B in enumerate(B_tensors):
             if layer_idx < len(B_tensors) - 1:
-                layers.append(BilinearTopK(B, norm = norm, bias=bias))
+                layers.append(BilinearTopK(B, norm = self.cfg.rms_norm, bias=self.cfg.bias))
             else:
-                layers.append(BilinearTopK(B, norm = False, bias=bias))
+                layers.append(BilinearTopK(B, norm = self.final_norm, bias=self.cfg.bias))
         self.layers = nn.Sequential(*layers)
 
         self.linear_out = torch.nn.Linear(*W_out.T.shape)
         with torch.no_grad():
-          self.linear_out.weight = torch.nn.Parameter(W_out)
-          self.linear_out.bias = torch.nn.Parameter(bias_out)
+            self.linear_out.weight = torch.nn.Parameter(W_out)
+            self.linear_out.bias = torch.nn.Parameter(bias_out)
+
+    def get_tensors(self, topKs):
+        device = self.svds[0].V.device
+
+        B_tensors = []
+        R_tensors = []
+
+        for layer_idx, svd in enumerate(self.svds):
+            topK = topKs[layer_idx]
+            svd_components = self.svds[layer_idx].V.shape[1]
+            dim = np.sqrt(svd.V.shape[0]).astype(int)
+
+            if self.input_idxs is None:
+                Q_dim = np.sqrt(svd.V.shape[0]).astype(int) if layer_idx == 0 else topKs[layer_idx-1]
+                Q_idxs = torch.arange(Q_dim)
+                if self.cfg.bias:
+                    Q_idxs = torch.cat([Q_idxs, torch.tensor([svd_components])])
+                
+                if self.sing_val_type == 'with R':
+                    Q = svd.V.reshape(dim,dim,svd_components)[:,:,:topK][Q_idxs, :, :][:,Q_idxs,:]
+                    R = svd.U[:,:topK] @ torch.diag(svd.S[:topK])
+                elif self.sing_val_type == 'with Q':
+                    Q = svd.V.reshape(dim,dim,svd_components)[:,:,:topK][Q_idxs, :, :][:,Q_idxs,:]
+                    Q = Q @ torch.diag(svd.S[:topK])
+                    R = svd.U[:,:topK]
+                
+                B = einops.rearrange(Q, "i j svd -> svd i j")
+                B_tensors.append(B)
+                R_tensors.append(R)
+
+            else:
+                if layer_idx == 0:
+                    idxs = input_idxs.clone().to(device)
+                    Q_idxs = input_idxs.clone().to(device)
+                else:
+                    Q_idxs = torch.arange(topK_list[layer_idx-1]).to(device)
+                    if bias:
+                        idxs = torch.arange(svd_components+1).to(device)
+                        Q_idxs = torch.cat([Q_idxs, torch.tensor([svd_components])]).to(device)
+                    else:
+                        idxs = torch.arange(svd_components).to(device)
+
+                topK = topK_list[layer_idx]
+                B = torch.zeros((topK, len(Q_idxs), len(Q_idxs))).to(device)
+
+                idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(idxs,2))).to(device)
+                mask0 = torch.isin(idx_pairs[:,0], Q_idxs)
+                mask1 = torch.isin(idx_pairs[:,1], Q_idxs)
+                mask = torch.logical_and(mask0, mask1)
+                idx_pairs_reduced = idx_pairs[mask]
+                if sing_val_type == 'with R':
+                    Q_reduced = svd.V[mask, :topK]
+                    R = svd.U[:,:topK] @ torch.diag(svd.S[:topK])
+                elif sing_val_type == 'with Q':
+                    Q_reduced = svd.V[mask, :topK] @ torch.diag(svd.S[:topK])
+                    R = svd.U[:,:topK]
+
+                idx_pairs = torch.tensor(list(itertools.combinations_with_replacement(range(len(Q_idxs)),2))).to(device)
+                B[:, idx_pairs[:,0],idx_pairs[:,1]] = Q_reduced.T
+                B[:, idx_pairs[:,1],idx_pairs[:,0]] = Q_reduced.T
+
+                B_tensors.append(B)
+                R_tensors.append(R)
+        return B_tensors, R_tensors
 
     def forward(self, x):
-        if self.norm:
+        if self.cfg.rms_norm:
             x = self.rms_norm(x)
         x = self.get_input(x)
         self.input = x
@@ -233,20 +314,24 @@ class BilinearModelTopK(torch.nn.Module):
         return self.out
 
     def get_input(self,x):
-        if self.bias:
+        if self.input_idxs is None:
+            return x
+
+        if self.cfg.bias:
             input_idxs = self.input_idxs[:-1]
+            return x[:,input_idxs]
         else:
-            input_idxs = self.input_idxs
-        return x[:,input_idxs]
+            return x[:,input_idxs]
 
     def validation_accuracy(self, test_loader, print_acc=True):
         # In test phase, we don't need to compute gradients (for memory efficiency)
+        device = self.layers[0].B.device
         with torch.no_grad():
             n_correct = 0
             n_samples = 0
             for images, labels in test_loader:
-                images = images.reshape(-1, 28*28).to(self.device)
-                labels = labels.to(self.device)
+                images = images.reshape(-1, 28*28).to(device)
+                labels = labels.to(device)
                 outputs = self.forward(images)
                 # max returns (value ,index)
                 _, predicted = torch.max(outputs.data, 1)
