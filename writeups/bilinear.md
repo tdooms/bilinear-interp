@@ -1,14 +1,15 @@
-# Tensor Math Primer
+# Bilinear Layers
 
-**By Thomas Dooms and Michael Pearce**
-
-This document offers an intuitive overview into the world of tensors and their utility in interpretability. The contents are aimed at researchers that have solid foundations into transformer mechanistic interpretability but don't especially know how higher-order tensors work.
+This document offers an intuitive explanation the math behind bilinear layers and their decomposition. The contents are aimed at researchers that have solid foundations into transformer mechanistic interpretability but don't especially know how higher-order tensors work.
 
 > **Prerequisites**
-> 
+>
 > A Mathematical Framework for Transformer Circuits [[link](https://transformer-circuits.pub/2021/framework/index.html)]
+>
+> A general sense for interpretability research and linear algebra
 
 ## Bilinear Maps
+
 Like most things in life, bilinear maps are a very natural concept once one is familiar with it, but it can be a bit tricky to wrap your head around at first. What follows is a very intuitive explanation of bilinear maps, followed by a more mathematical definition.
 
 Let's start with a linear map, while the term may be new, everyone should know this concept. In essence, a matrix is the most general form of a linear map. One can think of a matrix as a function that takes a vector as input and returns a new vector as output. It does so while conserving linear properties that makes them so useful to work with.
@@ -39,26 +40,26 @@ This may seem very arbitrary at first but if you squint a bit, you can see that 
 
 A normal layer in a neural network is structured as follows.
 
-$$h^{out} = ReLU(W h + b)$$
+$$\vec{y} = ReLU(W \vec{x} + \vec{b})$$
 
 In contrast, a bilinear layer takes on the following structure.
 
-$$h^{out} = (W h + b) \odot (V h + c)$$
+$$\vec{y} = (W \vec{x} + \vec{b}) \odot (V \vec{x} + \vec{c})$$
 
-Here, $W$ and $V$ are weight matrices and $b$ and $c$ are biases of some layer. The $\odot$ denotes an element-wise product. This is not a bilinear map due to the biases. However, without biases we cannot represent potentially essential operations such as the identity operation (seriously, try this if you don't believe me).
+Here, $W$ and $V$ are weight matrices and $\vec{b}$ and $\vec{c}$ are biases of some layer. The $\odot$ denotes an element-wise product. This is not a bilinear map due to the biases. However, without biases we cannot represent potentially essential operations such as the identity operation (seriously, try this if you don't believe me).
 
 ### Including Biases
 
 The importance of biases lie in their independence of the input. In extreme cases, such as a completely zero input, a linear operation is not able to produce anything else than this zero vector. However, this independence from the input is also what makes biases slightly annoying to deal with. Fortunately, we can use a trick: make the bias actually depend on a part of the input and ensure that this part is constant. Practically speaking, if a constant one is appended to the input vector and an extra row is added to the weight matrix, the elements in this row act as biases. In essence, a bias is just an ordinary weight multiplied by a constant one. Formulaically, for a 2x2 matrix, we get:
 
-$$\begin{bmatrix} h^{out}_0 \\ h^{out}_1 \end{bmatrix} = \begin{bmatrix} W_{00} & W_{01} & b_0\\ W_{10} & W_{11} & b_1\\ \end{bmatrix} \cdot \begin{bmatrix} h_0 \\ h_1 \\ 1 \end{bmatrix}$$
+$$\begin{bmatrix} y_0 \\ y_1 \end{bmatrix} = \begin{bmatrix} W_{00} & W_{01} & b_0\\ W_{10} & W_{11} & b_1\\ \end{bmatrix} \cdot \begin{bmatrix} x_0 \\ x_1 \\ 1 \end{bmatrix}$$
 
 If expanded, this results in the following, which is obviously identical to using normal biases.
 
-$$h^{out}_0 = h_0 \cdot W_{00} + h_0 \cdot W_{10} + 1 \cdot b_0$$
-$$h^{out}_1 = h_1 \cdot W_{01} + h_1 \cdot W_{11} + 1 \cdot b_1$$
+$$y_0 = x_0 \cdot W_{00} + x_0 \cdot W_{10} + 1 \cdot b_0$$
+$$y_1 = x_1 \cdot W_{01} + x_1 \cdot W_{11} + 1 \cdot b_1$$
 
-Back to the bilinear setting, we apply this technique to both sides. Now, a network can learn identity functions using the following weights $h^{out} = (I \cdot h + \vec{0}) \odot (O \cdot h + \vec{1})$ where $I$ and $O$ are the identity and zero matrix respectively. In summary, including biases scales both $W$ and $V$ by one column but does not change any properties. Therefore, writing $h^{out} = (W h) \odot (V h)$ is essentially equivalent to $h^{out} = (W h + b) \odot (V h + c)$.
+Back to the bilinear setting, we apply this technique to both sides. Now, a network can learn identity functions using the following weights $\vec{y} = (I \cdot \vec{x} + \vec{0}) \odot (O \cdot \vec{x} + \vec{1})$ where $I$ and $O$ are the identity and zero matrix respectively. In summary, including biases scales both $W$ and $V$ by one column but does not change any properties. Therefore, writing $\vec{y} = (W \vec{x}) \odot (V \vec{x})$ is essentially equivalent to $\vec{y} = (W \vec{x} + \vec{b}) \odot (V \vec{x} + \vec{c})$.
 
 > By also concatenating an additional row of the form $[0, 0, ..., 1]$, the constant can be effortlessly propagated through the network to calculate all consequent biases.
 
@@ -85,17 +86,17 @@ This looks a bit strange but in essence, it's doing an element-wise multiplicati
 
 Its possible to integrate normal linear maps (such as an embedding/projection or unembedding/classifier) into the above-mentioned tensor. Say we have the following network.
 
-$$ h_0 = E x $$
-$$ h_1 = (W h_0) \odot (V h_0) $$
-$$ y = U h_1 $$
+$$ \vec{h_0} = E \vec{x} $$
+$$ \vec{h_1} = (W \vec{h_0}) \odot (V \vec{h_0}) $$
+$$ \vec{y} = U \vec{h_1} $$
 
 As both $E$ and $U$ are linear, we can actually "fold" these into the bilinear operation.
 
-$$ y = U((W E h_0) \odot (W E x)) = (U W E x) \odot (U v E x)$$
+$$ \vec{y} = U((W E \vec{x}) \odot (W E \vec{x})) = (U W E \vec{x}) \odot (U V E \vec{x})$$
 
 We can simplify $U$, $W$/$V$, and $E$ into the matrices $W^*$ and $V^*$ respectively, yielding:
 
-$$ y = (W^* x) \odot (V^* x) $$
+$$ \vec{y} = (W^* \vec{x}) \odot (V^* \vec{x}) $$
 
 Akin to including the biases, our $W$ and $V$ matrices have changed in dimensionality but not in properties. This again means that all techniques, such as the tensor construction, can be applied to this folded form. In essence, this allows us to create a tensor that encapsulates the exact computation of 3 full layers at once. For instance, in transformers, this allows us to fold the embedding and unembedding into an arbitrary (bilinear) MLP. This means we have a single object for describing this indirect path.
 
@@ -103,47 +104,59 @@ Akin to including the biases, our $W$ and $V$ matrices have changed in dimension
 
 Bilinear layers with biases can represent a large category of interactions between features, every quadratic function with 2 inputs to be precise. This allows them to exactly compute any kind of binary gate (yes, even XORs) in a single layer. They can even approximate arbitrary ternary operations to a high degree. The representational capacity of these layers is honestly breathtaking.
 
-## Feature Interactions
+## Interactions
 
 We have a good understanding of how to manipulate and fold these bilinear tensors but not yet of what they inherently mean.
 
-> In higher dimensions, this information is less useful. Only read if you're very interested in the exact workings of this bilinear layer.
+### Interaction Matrix
 
-### Decomposition
+To get a sense on how input features interact, let's write out a toy example. We use an input vector with two elements $\vec{x} = [x_0, x_1]$. We will study output $a$.
 
-Let's decompose what the network can learn a bit more formally. This can be done by distributing over the element-wise product. We can see 3 forms of interactions which determine the output of the layer.
-$$(Wh + b) \odot (Vh + c) = (Wh \odot Vh) + (Wh \odot c + b \odot Vh) + (b \odot c)$$
-**Constant.** Starting at the simple case of bias-bias ($b \odot c$), this is simply the product of both sides, it is completely independent of the input and therefore called the *constant* component.
+$$y_a = (W_a \cdot \vec{x}) \odot (V_a \cdot \vec{x})$$
 
-**Linear.** The next case are the linear interactions ($Wh \odot c + b \odot Vh$). In the general case, this can happen for either side of the input but in our case this boils down to the same (as we will exploit a bit later).
+$$y_a = (W_{a0}\cdot x_0 + W_{a1}\cdot x_1) \odot (V_{a0} \cdot x_0 + V_{a1} \cdot x_1)$$
 
-**Quadratic.** Lastly, we have the quadratic interactions ($Wh \odot Vh$). These interactions happen between any of the input pairs, this becomes clear if we write out the formula. Given input $[x, y]$, this term becomes.
+$$y_a = W_{a0}V_{a0} \cdot x_0^2 + W_{a0}V_{a1} \cdot x_0x_1 + W_{a1}V_{a0} \cdot x_1 x_0 + W_{a1} V_{a1} \cdot x_1^2$$
 
-$$ = (W \cdot \begin{bmatrix} x \\ y \end{bmatrix}) \odot (V \cdot \begin{bmatrix} x \\ y \end{bmatrix}) $$
-$$ = \begin{bmatrix} x \cdot W_{00} + y \cdot W_{10} \\ x \cdot W_{01} + y \cdot W_{11} \end{bmatrix} \odot \begin{bmatrix} x \cdot V_{00} + y \cdot V_{10} \\ x \cdot V_{01} + y \cdot V_{11} \end{bmatrix}$$
+$$y_a = \sum_{i,j} \begin{bmatrix} W_{a0}V_{a0} & W_{a0}V_{a1} \\ W_{a1}V_{a0} & W_{a1}V_{a1} \end{bmatrix}_{ij} \cdot \begin{bmatrix} x_0^2 & x_0x_1 \\ x_1x_0 & x_1^2 \end{bmatrix}_{ij}$$
 
-$$=\begin{bmatrix} x^2 \cdot W_{00} \cdot V_{00} + xy \cdot W_{00} \cdot V_{10} + yx \cdot W_{10} \cdot V_{00} + y^2 \cdot W_{10} \cdot V_{10} \\ x^2 \cdot W_{01} \cdot V_{01} + xy \cdot W_{01} \cdot V_{11} + yx \cdot W_{11} \cdot V_{01} + y^2 \cdot W_{11} \cdot V_{11} \end{bmatrix}$$
+In the general case, we can rewrite this as the following, where $\otimes$ is an outer product. Here, we call $W_{a} \otimes V_{a}$ our interaction matrix $B_a$ and $\vec{x} \otimes \vec{x}$ the feature matrix $F$. The interaction matrix essentially determines the weight by which each feature is scaled.
 
-### Input Symmetry
+$$y_a = \sum_{i,j} \left[ (W_{a} \otimes V_{a})_{ij} \cdot (\vec{x} \otimes \vec{x})_{ij} \right] = \sum_{i,j} B_{aij} F_{ij}$$
 
-Hopefully, you now have a good feel on what our bilinear layer can represent. There is one property that we haven't yet exploited to simplify this representation. Specifically, given that both out inputs are always the same, we can simplify all feature pair interactions. In the above example, since we use real numbers $xy = yx$, therefore, we can rewrite the following in a few ways.
+Note that the naming of $B$ is not a coincidence. This is actually the exact tensor that we use to describe our the full bilinear layer. Intuitively, $B$ is a stack of interaction matrices.
 
-$$\begin{align*}
-&= xy \cdot W_{01} \cdot V_{11} + yx \cdot W_{11} \cdot V_{01} \\
-&= xy \cdot (W_{01} \cdot V_{11} + W_{11} \cdot V_{01}) + yx \cdot 0 \\
-&=  0.5 \cdot xy \cdot (W_{01} \cdot V_{11} + W_{11} \cdot V_{01}) + 0.5 \cdot yx \cdot(W_{01} \cdot V_{11} + W_{11} \cdot V_{01}) \\
-\end{align*}$$
+### Symmetrification
 
-All computations are exactly equal, however, the interaction matrix first is not guaranteed to have any structure. The second is guaranteed to be a upper or lower triangular matrix. The third is guaranteed to be symmetric (equal to its transpose). In this project, we picked the symmetric matrix as this generally results in nicer plots and properties. This calculation is quite simple (*.mT* transposes the last two dimensions):
+Given that $F$ is symmetric, we can perform the following.
+
+$$ B_a F = B_a^T F = \dfrac{1}{2}(B_a + B_a^T)F = B'_aF$$
+
+In essence, $B'_a$ is a symmetric version of $B^a$ that performs the same computation. Symmetric matrices are generally easier to work with, so we always perform this simplification trick.
+
+ Therefore, performing this trick in code is exceedingly simple ($.mT$ does a transpose of the last two dimensions).
 
 ```python
-B_symm = 0.5 * B + 0.5 * B.mT
+B_symm = 0.5 * (B + B.mT)
 ```
 
-### Interaction Formula
-``TODO: this notation really sucks``
+### Bias Decomposition
 
-Given all the above knowledge, we write down the closed formula for determining an output given a pair of input features. We denote this pair of features with $x$ and $y$, we denote their indices with $i$ and $j$ respectively. Furthermore, we denote the output index as $o$ and the bias index as $-1$.
+> In higher dimensions, this information is less useful. Only read if you're very interested in the exact workings of biases in bilinear layers and it's expressive properties.
+
+Given this interaction matrix, let's decompose what bias-infused networks can learn a bit more formally. This can be done by distributing over the element-wise product. We can see 3 forms of interactions which determine the output of the layer.
+
+$$(W \vec{x} + \vec{b}) \odot (V \vec{x} + \vec{c}) = (W \vec{x} \odot V \vec{x}) + (W \vec{x} \odot \vec{c} + \vec{b} \odot V \vec{x}) + (\vec{b} \odot \vec{c})$$
+
+**Quadratic.** First, we have the quadratic interactions ($W\vec{x} \odot V\vec{x}$). These interactions happen between any of the input pairs as seen above.
+
+**Linear.** The next case are the linear interactions ($W\vec{x} \odot \vec{c} + \vec{b} \odot V\vec{x}$). Since $\vec{b}$ and $\vec{c}$ are simply a constant vectors, we can write $L \vec{x} = (W \vec{c} + V \vec{b}) \vec{x}$. Just as $B$ is a stack of interaction quadratic matrices, $L$ is a stack of linear interaction vectors.
+
+**Constant.** The simple case of bias-bias ($\vec{b} \odot \vec{c}$), this is simply the product of both sides, it is completely independent of the input and therefore called the *constant* component. For clarity, this is a stack of single values for each output.
+
+It may seem strange that we spent effort at first to incorporate biases into the network just to decompose them again. The main reason is that these bias-related objects are actually related to the interactions and are therefore more interpretable.
+
+<!-- Given all the above knowledge, we write down the closed formula for determining an output given a pair of input features. We denote this pair of features with $x$ and $y$, we denote their indices with $i$ and $j$ respectively. Furthermore, we denote the output index as $o$ and the bias index as $-1$.
 
 $f^o_{ij} = (W_{i,o} \cdot x + W_{j,o} \cdot y + W_{-1,o}) \odot (V_{i,o} \cdot x + V_{j,o} \cdot y + V_{-1,o})$
 
@@ -153,31 +166,41 @@ $f^o_{xy} = aa^o \cdot x^2 + bb^o \cdot y^2 + 2ab^o \cdot xy + a^o \cdot x + b^o
 
 Where $aa^o = W_{xo} \cdot V_{xo}$, ...
 
-Generally, we will ignore the superscript that indicates the output feature for simplicity. Second, $aa$ refers to a fully distinct variable from $a$. This is slightly strange, but preferable over using arbitrary letters for each weight.
+Generally, we will ignore the superscript that indicates the output feature for simplicity. Second, $aa$ refers to a fully distinct variable from $a$. This is slightly strange, but preferable over using arbitrary letters for each weight. -->
+
+## Tensor Networks
+
+``todo``
+
+## Transformer Circuits
+
+Given all this background knowledge, it's time to turn towards transformers and how these can be studied. In short, the methodology is very similar to current mechanistic interpretability techniques. The only exception is that bilinear layers also allow us to study the MLP but it requires some smart approaches. In short, constructing the $B$ tensor in larger models is computationally infeasible, therefore we usually analyze sensible subsets.
+
+### Objects
+
+Objects represent a subset of model behavior we wish to study.
+
+- $B^+ = PB + I$: The MLP + residual stream tensor.
+- $B^+OV$: The right-attention interaction tensor.
+
+### Projections
+
+- $T(.) = U(E^T . E)$: The full token space projection.
+- $D(.) =  U\Delta(E^T . E)$: The diagonal or direct input output token map.
+- $A(.)$ a filter projection defined by the top-k entries of a QK circuit. In code: ``[:, T(QK).mean(0).topk, T(QK).mean(1).topk]``.
+- $\mathcal{P}_{tok}$ indexes at a certain axis according to a token.
+
+### Analysis
+
+- SVD
+- Max activation
+- ...
+
+### Examples
+
+- $T_{game}(B^+)$ is the interaction tensor for the token ``game``.
+- $D(B^+)$ defines the bi-grams learned in an MLP according to their strength.
+- $D(B^+OV)$ defines a map for V-composition with an MLP.
 
 
-## Results
-Currently, our results mostly consist of three distinct categories.
-
-### Compression 
-...
-
-### Computation
-...
-
-### Decomposition
-...
-
-## Attribution
-Michael focussed on the high dimensional case of MNIST while Thomas focussed on low-dimensional toy models. In terms of teamwork, Michael took the role of supervisor, suggesting ideas and new experiments while Thomas' contributions were mostly code-based.
-
-> The mentioned paper ([4]) has my favourite conclusion of any paper I have ever read: "*We offer no explanation as to why these architectures seem to work; we attribute their success, as all else, to divine benevolence*". In a sense, in this project, we aim to provide this divine explanation.
-
-## References
-- <a id="1">[1]</a> Decomposing Language Models With Dictionary Learning [link](https://transformer-circuits.pub/2023/monosemantic-features/index.html). Bricken et al. 10/2023.
-- <a id="2">[2]</a> Toy Models of Superposition [link](https://transformer-circuits.pub/2022/toy_model/index.html). Elhange et al. 09/2022.
-- <a id="3">[3]</a> A technical note on bilinear layers for interpretability [link](https://arxiv.org/abs/2305.03452). Lee Sharkey 05/2023
-- <a id="4">[4]</a> GLU Variants Improve Transformer [link](https://arxiv.org/abs/2002.05202). Noam Shazeer 02/2022
-- <a id="5">[5]</a> Polysemanticity and Capacity in Neural Networks [link](https://arxiv.org/abs/2210.01892). Scherlis et al. 07/2023
-- <a id="6">[6]</a> Toward A Mathematical Framework for Computation in Superposition [link](https://www.lesswrong.com/posts/2roZtSr5TGmLjXMnT). 01/2024
-- <a id="7">[7]</a> Multilayer Feedforward Networks With Non-Polynomial Activation Functions Can Approximate Any Function [link](https://archive.nyu.edu/bitstream/2451/14384/1/IS-91-26.pdf). Leshno et al. 09/1991
+It's generally not very difficult to find 

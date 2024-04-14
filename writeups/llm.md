@@ -29,11 +29,11 @@ We also performed a limited amount of semi-rigorous ablations:
 
 **Initialization**. I haven't studied this in-depth, it seems to have a large impact (easily 0.1 loss). The initialization variation between runs seems to not matter at all (same loss up to 2 decimal points).
 
-**Comparison to ReLU**. From a handful of experiments we can corroborate the findings of this [paper](https://arxiv.org/abs/2002.05202). For fairness, we use the usual $\text{n\_hidden} = 4 \cdot \text{d\_model}$ for ReLU and $\text{n\_hidden} = 3 \cdot \text{d\_model}$ for the bilinear case. This results in about $8\%$ more parameters for the bilinear setup (using a multiplier of 2 still outperforms the ReLU, which is $16\%$ less parameters) and outperforms it by a loss of ~0.05.
+**Comparison to ReLU**. From a handful of experiments we can corroborate the findings of this [paper](https://arxiv.org/abs/2002.05202). For fairness, we use the usual $n_{hidden} = 4 \cdot d_{model}$ for ReLU and $n_{hidden} = 3 \cdot d_{model}$ for the bilinear case. This results in about $8\%$ more parameters for the bilinear setup (using a multiplier of 2 still outperforms the ReLU, which is $16\%$ less parameters) and outperforms it by a loss of ~0.05.
 
 ### Training
 
-We perform training with a default HuggingFace trainer, no special settings at all. $\text{lr}=0.001$ and $\text{batch\_size} = 16$. Most models take about 20-30 minutes to train on my NVIDIA RTX 4080. I haven't calculated the effective FLOPS but given the its temperature and lack of noise, there is probably some bottleneck.
+We perform training with a default HuggingFace trainer, no special settings at all. $\text{lr}=0.001$ and $n_{batch} = 16$. Most models take about 20-30 minutes to train on my NVIDIA RTX 4080. I haven't calculated the effective FLOPS but given the its temperature and lack of noise, there is probably some bottleneck.
 
 ### Tokenizer
 
@@ -107,7 +107,7 @@ Beyond this, we can perform heuristic studies by averaging over rows/columns and
 
 We won't go too in-depth into results here but they paint an promising picture. Here are some Jupyter notebooks outlining them.
 
-- [MLP bigrams](../results/ngram.ipynb)
+- [MLP bigrams](../results/bigram.ipynb)
 - [Attention Maps](../results/enrichment.ipynb)
 
 ## Future work
