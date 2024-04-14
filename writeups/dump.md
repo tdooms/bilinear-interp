@@ -1,0 +1,11 @@
+# Text Dump
+
+Don't look too deep here, this is mostly a file in which I dump snippets of written text that I didn't want to throw away but that dion't fit anywhere elese
+
+---
+
+Activation functions are a vital component in deep networks to learn complex functions. The sole purpose of an activation function is to introduce non-linearity into the network to prevent matrix collapse. It is often argued that the simplest non-linearity is piecewise linearity, which is exactly what the most popular activation function, the ReLU, does.
+
+However, in terms of interpretability, ReLUs are very difficult to study. Intuitively, the issue is that it is only possible to know the output of a ReLU by passing in the input, not solely from the weights. While it is possible to discern structure and circuits in these weights, this is often done by means of sampling the input or using gradient based techniques to generate visualizations which may not reflect the full complexity of the models. This makes it impossible to make strong guarantees on which outputs models will be able to produce. This has been observed in the form of adversarial examples, in which a slight perturbation is applied to the input to confuse the model into making bogus predictions.
+
+This undesirable property of the ReLU has led to MLPs and similar structures being famously hard to interpret. As a consequence, several papers ([5], [6]) have used quadratic activation functions to perform theoretic analyses. Unfortunately, simple quadratic activation functions result in terrible accuracy due to as they do not lead to universal function approximators ([7]). However, as a substitute, it is possible to use bilinear layers. This operation possesses appealing characteristic like the quadratic activations while being comparable to (and even surpassing) ReLUs in accuracy in large models as established in ([4]). Recently, most cutting-edge models such as Llama-2 have started using variants of it. Therefore, in this document, we make the design decision to replace ReLUs with the more interpretable bilinear layer. We provide an introduction to these layers and provide an overview of our current efforts in interpreting simple models using them.
