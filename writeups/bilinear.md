@@ -57,6 +57,7 @@ $$\begin{bmatrix} y_0 \\ y_1 \end{bmatrix} = \begin{bmatrix} W_{00} & W_{01} & b
 If expanded, this results in the following, which is obviously identical to using normal biases.
 
 $$y_0 = x_0 \cdot W_{00} + x_0 \cdot W_{10} + 1 \cdot b_0$$
+
 $$y_1 = x_1 \cdot W_{01} + x_1 \cdot W_{11} + 1 \cdot b_1$$
 
 Back to the bilinear setting, we apply this technique to both sides. Now, a network can learn identity functions using the following weights $\vec{y} = (I \cdot \vec{x} + \vec{0}) \odot (O \cdot \vec{x} + \vec{1})$ where $I$ and $O$ are the identity and zero matrix respectively. In summary, including biases scales both $W$ and $V$ by one column but does not change any properties. Therefore, writing $\vec{y} = (W \vec{x}) \odot (V \vec{x})$ is essentially equivalent to $\vec{y} = (W \vec{x} + \vec{b}) \odot (V \vec{x} + \vec{c})$.
@@ -87,7 +88,9 @@ This looks a bit strange but in essence, it's doing an element-wise multiplicati
 Its possible to integrate normal linear maps (such as an embedding/projection or unembedding/classifier) into the above-mentioned tensor. Say we have the following network.
 
 $$ \vec{h_0} = E \vec{x} $$
+
 $$ \vec{h_1} = (W \vec{h_0}) \odot (V \vec{h_0}) $$
+
 $$ \vec{y} = U \vec{h_1} $$
 
 As both $E$ and $U$ are linear, we can actually "fold" these into the bilinear operation.
@@ -118,7 +121,7 @@ $$y_a = (W_{a0}\cdot x_0 + W_{a1}\cdot x_1) \odot (V_{a0} \cdot x_0 + V_{a1} \cd
 
 $$y_a = W_{a0}V_{a0} \cdot x_0^2 + W_{a0}V_{a1} \cdot x_0x_1 + W_{a1}V_{a0} \cdot x_1 x_0 + W_{a1} V_{a1} \cdot x_1^2$$
 
-$$y_a = \sum_{i,j} \begin{bmatrix} W_{a0}V_{a0} & W_{a0}V_{a1} \\ W_{a1}V_{a0} & W_{a1}V_{a1} \end{bmatrix}_{ij} \cdot \begin{bmatrix} x_0^2 & x_0x_1 \\ x_1x_0 & x_1^2 \end{bmatrix}_{ij}$$
+$$y_a = \sum_{i,j} \left(\begin{bmatrix} W_{a0} V_{a0} & W_{a0} V_{a1} \\ W_{a1} V_{a0} & W_{a1} V_{a1} \end{bmatrix} \cdot \begin{bmatrix} x_0^2 & x_0 x_1 \\ x_1 x_0 & x_1^2 \end{bmatrix} \right)_{ij}$$
 
 In the general case, we can rewrite this as the following, where $\otimes$ is an outer product. Here, we call $W_{a} \otimes V_{a}$ our interaction matrix $B_a$ and $\vec{x} \otimes \vec{x}$ the feature matrix $F$. The interaction matrix essentially determines the weight by which each feature is scaled.
 
