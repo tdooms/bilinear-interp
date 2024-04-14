@@ -225,7 +225,6 @@ class Transformer(PreTrainedModel):
         pos = torch.arange(0, input_ids.size(1), dtype=torch.long, device=input_ids.device)
 
         embed = self.transformer.wte(input_ids) + self.transformer.wpe(pos)
-        embed = self.transformer.wte(input_ids)
         x = self.transformer.drop(embed)
         
         for layer in self.transformer.h:
@@ -238,11 +237,7 @@ class Transformer(PreTrainedModel):
             return CausalLMOutput(logits=logits)
         else:
             shifted_labels = labels[..., 1:].contiguous()
-            print("labels", shifted_labels.shape, labels.shape)
             shifted_logits = logits[..., :-1, :].contiguous()
-            print("logits", shifted_logits.shape, logits.shape)
-            
-            print("viewed", shifted_logits.view(-1, logits.size(-1)).shape, shifted_labels.view(-1).shape)
             
             loss = self.criterion(shifted_logits.view(-1, logits.size(-1)), shifted_labels.view(-1))
             return CausalLMOutput(loss=loss, logits=logits)
@@ -367,7 +362,7 @@ class Transformer(PreTrainedModel):
         return pd.DataFrame(dict(name=names, parameters=parameters, dimensions=dims))
 
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def generate(self, prompt, max_length=None, temperature=1.0, top_k=None, clean=True):
         input_ids = self.tokenizer.encode(prompt, return_tensors="pt")[..., :-1].to(self.device)
         max_length = min(max_length or self.config.n_ctx, self.config.n_ctx - input_ids.size(-1) - 1)
@@ -388,7 +383,7 @@ class Transformer(PreTrainedModel):
             # append sampled index to the running sequence and continue
             input_ids = torch.cat((input_ids, next_id), dim=1)
 
-        out = self.tokenizer.decode(input_ids[0], skip_special_tokens=False)
+        out = self.tokenizer.decode(input_ids[0], skip_special_tokens=True)
 
         if clean:
             out = out.replace(" ##", "")

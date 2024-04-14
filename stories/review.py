@@ -2,14 +2,12 @@
 %load_ext autoreload
 %autoreload 2
 
-from nnsight import NNsight
 from transformers import AutoTokenizer, PretrainedConfig
-from stories.model import Transformer, Config
+from shared.transformer import Transformer, Config
 from IPython.display import display
-from stories.utils import get_summary, generate
 
 # %%
-name = "tdooms/MicroStories-1-256-b"
+name = "tdooms/TinyStories-2-512"
 
 config = Config.from_pretrained(name)
 model = Transformer.from_pretrained(name, config=config)
@@ -17,17 +15,13 @@ model = Transformer.from_pretrained(name, config=config)
 tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{config.n_vocab}-uncased", pad_token="[PAD]")
 
 # %%
-display(get_summary(model)[0])
-print(f"{get_summary(model)[1]:,}")
+model.summary()
 # %%
 
-model.center_unembed().fold_norms()
+# model.center_unembed().fold_norms()
+prompt = "the color of the sky was"
+# prompt = "the lizard and the frog"
 
-prompt = "the lizard"
-input_ids = tokenizer.encode(prompt, return_tensors="pt")
-
-output = generate(model, input_ids, 100, temperature=1, top_k=2)
-output_text = tokenizer.decode(output[0], skip_special_tokens=True)
-
-print(output_text)
+output = model.generate(prompt, 100, temperature=1, top_k=1)
+print(output)
 # %%

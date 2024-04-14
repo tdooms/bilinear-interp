@@ -97,7 +97,7 @@ As both $E$ and $U$ are linear, we can actually "fold" these into the bilinear o
 
 $$ \vec{y} = U((W E \vec{x}) \odot (W E \vec{x})) = (U W E \vec{x}) \odot (U V E \vec{x})$$
 
-We can simplify $U$, $W$/$V$, and $E$ into the matrices $W^*$ and $V^*$ respectively, yielding:
+We can simplify $U$, $W$ / $V$, and $E$ into the matrices $W^*$ and $V^*$ respectively, yielding:
 
 $$ \vec{y} = (W^* \vec{x}) \odot (V^* \vec{x}) $$
 

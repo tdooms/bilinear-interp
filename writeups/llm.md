@@ -12,7 +12,6 @@ Usually, language models are trained with a single goal in mind, achieve the low
 
 HuggingFace contains a wide range of transformer models that can be tweaked without much effort. However, all these models obviously use ordinary activation functions such as GeLU (and lots of other weird names ending in LU). Hence, we need to create our own models. Luckily, there are great resources online, such as this [repository](https://github.com/karpathy/nanoGPT) from Andrej Karpathy.
 
-
 Below is an image of the architecture and notation we settled on. In terms of noteworthy design choices there isn't much to say. This uses RMSnorm, instead of LayerNorm as most modern architectures do. We use multi-head attention (generally with head size ~64), which also isn't a shocker. We also use no weight tying.
 
 <img src="../images/bilinformer.png" height=400 />
