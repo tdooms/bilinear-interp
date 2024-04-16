@@ -136,7 +136,7 @@ class EigenvectorPlotter():
         plt.ylabel('Logits', fontsize=18)
 
     def plot_eigvals(self, eigvals):
-        plt.plot(eigvals, '.-')
+        plt.plot(eigvals.cpu().detach(), '.-')
         plt.ylabel('Eigenvalues', fontsize=18)
         plt.xlabel('Index', fontsize=18)
 

@@ -2,7 +2,7 @@
 by Michael Pearce and Thomas Dooms
 
 ## TLDR
-Bilinear layers of the form $g(x) = (Wx + b_w) \odot (V x + b_v)$ may help in interpreting how input features interact to create output features. For a given output, pairwise interactions between features can be described by a matrix which can be analyzed in various ways including eigendecomposition. We demonstrate this approach for a bilinear model trained to classify MNIST handwritten digits and find "kernels" that capture common curve segments for each digit. We also explore how to derive features directly from the model weights using singular value decomposition and sparse coding.
+Bilinear layers of the form $g(x) = (Wx + b_w) \odot (V x + b_v)$ may help in interpreting how input features interact to create output features. For a given output, pairwise interactions between features can be described by a matrix which can be analyzed in various ways including eigendecomposition. We demonstrate this approach for a bilinear model trained to classify MNIST handwritten digits and find linear "kernels" that capture common curve segments for each digit. We also explore how to derive features directly from the model weights using singular value decomposition or sparse coding.
 
 To rewrite a model's computations in the feature basis of a dictionary $D$, we introduce a "pseudoinverse trick" that sacrifices strict sparsity but maintains linearity and results in minimal reconstruction loss. In practice we find that zero activations remain small while large activations are well correlated. 
 
@@ -36,6 +36,8 @@ Say we're given a set of embedding and unembedding weight matrices, $E$ and $U$,
 ```math
 \tilde{B}_{a'i'j'} = \sum_{aij} U_{a'a} B_{aij}E_{i i'}E_{j j'}
 ```
+Since this is basically a change of basis for the inputs and outputs, we'll often drop the tilde notation when the basis clear from context. 
+
 ### The pseudoinverse trick for feature dictionaries
 Instead of an unembedding matrix we might be given a dictionary $D$ of features as its columns. These features might come from a sparse autoencoder where the activations are given by a ReLU or some other nonlinear function. Nonlinear activations are difficult to incorporate into a model without altering the computations (due to reconstruction error) or keeping the interactions between features interpretable.
 
@@ -44,15 +46,21 @@ However, we can use the pseudoinverse [[wiki](https://en.wikipedia.org/wiki/Moor
 A convenient property of $D^+$ is that $D D^+$ is a projection onto the subspace spanned by treating the features in $D$ as a vector basis. This means that if the set of features is a complete basis (full rank), which is reasonable given the typically large number of features, then $D D^+$ equals the identity, so we can transform to the feature basis with no reconstruction loss, although the feature activations will likely not be as sparse. 
 
 ### Interaction matrices
-In the feature basis, the bilinear tensor plays the role of the "transcoder" and we can explicitly see how interactions between in-features produce an activation for an out-feature. For example, for out-feature $a$ we can get its symmetric interaction matrix as $Q_{ij} = B_{aij}$. 
+In the feature basis, the bilinear tensor plays the role of the "transcoder" and we can explicitly see how interactions between in-features produce an activation for an out-feature. For example, for out-feature $a$ we can get its symmetric interaction matrix as 
+```math
+\begin{aligned}
+Q^{(a)}_{ij} &\equiv B_{aij} \\
+g(x)_a &= x^T Q^{(a)} x
+\end{aligned}
+```
 
 The interaction matrix $Q$ can be analyzed in a variety of ways. If $Q$ happens to be sparse, then it's already easy to interpret. If $Q$ is somewhat sparse, we can perhaps cluster the interactions to find sets of inputs that interact strongly with each other. 
 
-If the interactions in $Q$ are dense, we can look at its matrix decompositions and derive a set of linear "kernels". Since $Q$ is symmetric, the eigendecomposition takes a simple form: the eigenvalues are real and the eigenvectors are all orthogonal. The eigendecomposition is essentially the same as the SVD (the singular values are the absolute value of the eigenvalues). For an eigendecomposition, $Q = \sum_i \lambda_i q_i q_i^T$, we can express the activation output as
+If the interactions in $Q$ are dense, we can look at its matrix decompositions and derive a set of linear "kernels". Since $Q$ is symmetric, the eigendecomposition takes a simple form: the eigenvalues are real and the eigenvectors are all orthogonal. The eigendecomposition is essentially the same as the SVD (the singular values are the absolute value of the eigenvalues). For an eigendecomposition, $Q^{(a)} = \sum_i \lambda_i q^{(a)}\_i q^{(a)T}\_i$, we can express the output as
 ```math
-x^T Q x = \sum_i \lambda_i (q_i^T x)^2
+g(f)_a = \sum_i \lambda_i (x^T q^{(a)}_i )^2
 ```
-so the eigenvectors $q_i$ act as a set of linear "kernels". By keeping the large magnitude eigenvalues (typically a small percentage) we can get a low rank approximation of the interaction matrices. 
+The eigenvectors $q^{(a)}_i$ act as a set of linear "kernels" since the output can be fully rewritten in terms of each eigenvector's dot product with the input. By keeping the large magnitude eigenvalues (typically a small percentage) we can get a low rank approximation of the interaction matrices. 
 
 ### The MNIST digit basis
 As an example of interpreting bilinear layers, we trained a bilinear model to classify handwritten digits in the MNIST dataset [training details in Appendix]. To have clear input and output features we used a single bilinear layer with a final linear readout, which we can use as the unembedding $U$ to transform into the digit feature basis.
