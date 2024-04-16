@@ -2,7 +2,7 @@
 by Michael Pearce and Thomas Dooms
 
 ## TLDR
-Bilinear layers of the form $g(x) = (Wx + b_w) \odot (V x + b_v)$ may help in interpreting how input features interact to create output features. For a given output, pairwise interactions between features can be described by a matrix which can be analyzed in various ways including eigendecomposition. We demonstrate this approach for a bilinear model trained to classify MNIST handwritten digits and find "kernels" that capture common curve segments for each digit. We also explore how to derive features directly from the model weights using singular value decomposition and sparse coding.
+Bilinear layers of the form $g(x) = (Wx + b_w) \odot (V x + b_v)$ may help in interpreting how input features interact to create output features. For a given output, pairwise interactions between features can be described by a matrix which can be analyzed in various ways including eigendecomposition. We demonstrate this approach for a bilinear model trained to classify MNIST handwritten digits and find linear "kernels" that capture common curve segments for each digit. We also explore how to derive features directly from the model weights using singular value decomposition or sparse coding.
 
 To rewrite a model's computations in the feature basis of a dictionary $D$, we introduce a "pseudoinverse trick" that sacrifices strict sparsity but maintains linearity and results in minimal reconstruction loss. In practice we find that zero activations remain small while large activations are well correlated. 
 
