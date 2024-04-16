@@ -47,3 +47,5 @@ from transformer_lens import *
 model = HookedTransformer.from_pretrained("gpt2-small")
 
 model.W_K.shape
+
+# %%

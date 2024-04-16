@@ -205,5 +205,4 @@ Objects represent a subset of model behavior we wish to study.
 - $D(B^+)$ defines the bi-grams learned in an MLP according to their strength.
 - $D(B^+OV)$ defines a map for V-composition with an MLP.
 
-
 It's generally not very difficult to find 

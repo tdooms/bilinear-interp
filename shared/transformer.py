@@ -271,7 +271,11 @@ class Transformer(PreTrainedModel):
     def _lr(self):
         lr = torch.stack([self.transformer.h[i].mlp.w.weight for i in range(self.config.n_layer)], dim=0)
         return rearrange(lr, "n_layer (n_proj d_hidden) d_model -> n_proj n_layer d_hidden d_model", n_proj=2)
-        
+    
+    @property
+    def b(self):
+        return einsum(self.w_l, self.w_r, self.w_p, "hid in1, hid in2, out hid -> out in1 in2")
+    
     @property
     def w_l(self):
         return self._lr()[0]
@@ -308,6 +312,10 @@ class Transformer(PreTrainedModel):
     @property
     def w_pos(self):
         return self.transformer.wpe.weight.T
+    
+    @property
+    def w_e_pos(self):
+        return self.w_e + self.w_pos
     
     @property
     def w_u(self):
