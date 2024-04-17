@@ -114,11 +114,44 @@ class Config(PretrainedConfig):
         super().__init__(**kwargs)
 
 
+class Rotary(torch.nn.Module):
+    def __init__(self, dim, base=10000):
+        super().__init__()
+        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
+        self.register_buffer("inv_freq", inv_freq)
+        self.seq_len_cached = None
+        self.cos_cached = None
+        self.sin_cached = None
+
+    def forward(self, seq_len, device):
+        if seq_len != self.seq_len_cached:
+            self.seq_len_cached = seq_len
+            
+            t = torch.arange(seq_len, device=device).type_as(self.inv_freq)
+            freqs = torch.einsum("i,j->ij", t, self.inv_freq)
+            emb = torch.cat((freqs, freqs), dim=-1).to(device)
+            
+            self.cos_cached = emb.cos()[None, None, :, :]
+            self.sin_cached = emb.sin()[None, None, :, :]
+        return self.cos_cached, self.sin_cached
+    
+
+def rotate_half(x):
+    x1, x2 = x.chunk(2, dim=-1)
+    return torch.cat((-x2, x1), dim=-1)
+
+
+@torch.jit.script
+def apply_rotary_pos_emb(q, k, cos, sin):
+    return (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
+
+
 class Attention(nn.Module):
     def __init__(self, cfg) -> None:
         super().__init__()
         self.cfg = cfg
         
+        self.rotary = Rotary(cfg.d_model // cfg.n_head)
         self.qkv = nn.Linear(cfg.d_model, 3 * cfg.d_model, bias=False)
         self.o = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
         self.dropout = nn.Dropout(cfg.resid_dropout)
@@ -129,6 +162,9 @@ class Attention(nn.Module):
         
         qkv = self.qkv(x)
         q, k, v = rearrange(qkv, 'batch seq (n_proj n_head d_head) -> n_proj batch n_head seq d_head', n_proj=3, n_head=n_head).unbind(dim=0)
+        
+        cos, sin = self.rotary(q.size(-2), q.device)
+        q, k = apply_rotary_pos_emb(q, k, cos, sin)
         
         # I'll probably have to remove this if we want to interpret its internal activations at some point.
         z = scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=dropout, is_causal=True)
@@ -199,7 +235,7 @@ class Transformer(PreTrainedModel):
         
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.n_vocab, config.d_model),
-            wpe = nn.Embedding(config.n_ctx, config.d_model),
+            # wpe = nn.Embedding(config.n_ctx, config.d_model),
             drop = nn.Dropout(config.embed_dropout),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
             n_f = RMSNorm(config.d_model, config.norm_bias) if config.rms else nn.LayerNorm(config.d_model, bias=config.norm_bias)
@@ -222,9 +258,10 @@ class Transformer(PreTrainedModel):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, input_ids, labels=None, **kwargs):
-        pos = torch.arange(0, input_ids.size(1), dtype=torch.long, device=input_ids.device)
-
-        embed = self.transformer.wte(input_ids) + self.transformer.wpe(pos)
+        # pos = torch.arange(0, input_ids.size(1), dtype=torch.long, device=input_ids.device)
+        # embed = self.transformer.wte(input_ids) + self.transformer.wpe(pos)
+        
+        embed = self.transformer.wte(input_ids)
         x = self.transformer.drop(embed)
         
         for layer in self.transformer.h:
@@ -337,7 +374,6 @@ class Transformer(PreTrainedModel):
         names = [
             "total", 
             "emb.tok", 
-            "emb.pos", 
             "head", 
             "attn.qkv", 
             "attn.out", 
@@ -348,7 +384,6 @@ class Transformer(PreTrainedModel):
         parameters = [
             sum(p.numel() for p in self.parameters()),
             self.transformer.wte.weight.numel(),
-            self.transformer.wpe.weight.numel(),
             self.lm_head.weight.numel(),
             self.transformer.h[0].attn.qkv.weight.numel(),
             self.transformer.h[0].attn.o.weight.numel(),
@@ -359,7 +394,6 @@ class Transformer(PreTrainedModel):
         dims = [
             "",
             f"{self.config.d_model} x {self.config.n_vocab}",
-            f"{self.config.d_model} x {self.config.n_ctx}",
             f"{self.config.n_vocab} x {self.config.d_model}",
             f"3 x {self.config.d_model} x {self.config.d_model}",
             f"{self.config.d_model} x {self.config.d_model}",

@@ -14,11 +14,14 @@ model = Transformer(config)
 
 model.summary()
 # %%
+# Check if the model's forward pass works
+model.generate("bing bong", max_length=10)
+# %%
 
 trainer = train_transformer(model)
 
 # %%
-model.push_to_hub(f"TinyStories-1-256-nothing-tied")
+model.push_to_hub(f"TinyStories-1-256")
 # %%
 
 name = "tdooms/TinyStories-1-256-nothing-wo-pos"

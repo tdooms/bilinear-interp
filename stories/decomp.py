@@ -64,3 +64,7 @@ px.imshow(qs[:256, :256]).show()
 
 px.imshow(model.w_u[:, 57].view(64, 64), color_continuous_midpoint=0, color_continuous_scale="RdBu").show()
 # %%
+tucker = tl.tucker(model.b[0], rank=10)
+
+# %%
+tucker.core.shape
