@@ -311,7 +311,8 @@ class Transformer(PreTrainedModel):
     
     @property
     def b(self):
-        return einsum(self.w_l, self.w_r, self.w_p, "hid in1, hid in2, out hid -> out in1 in2")
+        b = einsum(self.w_l, self.w_r, self.w_p, "... hid in1, ... hid in2, ... out hid -> ... out in1 in2")
+        return 0.5 * (b + b.mT)
     
     @property
     def w_l(self):

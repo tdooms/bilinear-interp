@@ -30,6 +30,8 @@ We also performed a limited amount of semi-rigorous ablations:
 
 **Comparison to ReLU**. From a handful of experiments we can corroborate the findings of this [paper](https://arxiv.org/abs/2002.05202). For fairness, we use the usual $n_{hidden} = 4 \cdot d_{model}$ for ReLU and $n_{hidden} = 3 \cdot d_{model}$ for the bilinear case. This results in about $8\%$ more parameters for the bilinear setup (using a multiplier of 2 still outperforms the ReLU, which is $16\%$ less parameters) and outperforms it by a loss of ~0.05.
 
+**Inverse bottleneck factor**. Actually using $n_{hidden} = 3 \cdot d_{model}$ is enough for deeper models. It only improves accuracy for smaller ones.
+
 ### Training
 
 We perform training with a default HuggingFace trainer, no special settings at all. $\text{lr}=0.001$ and $n_{batch} = 16$. Most models take about 20-30 minutes to train on my NVIDIA RTX 4080. I haven't calculated the effective FLOPS but given the its temperature and lack of noise, there is probably some bottleneck.

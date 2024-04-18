@@ -1,7 +1,7 @@
 # %%
 
 import tensorly as tl
-from tensorly.decomposition import parafac
+from tensorly.decomposition import parafac, tucker
 import plotly.express as px
 from einops import *
 import torch
@@ -64,7 +64,12 @@ px.imshow(qs[:256, :256]).show()
 
 px.imshow(model.w_u[:, 57].view(64, 64), color_continuous_midpoint=0, color_continuous_scale="RdBu").show()
 # %%
-tucker = tl.tucker(model.b[0], rank=10)
+b = einsum(model.w_r[0], model.w_l[0], model.w_p[0], "hid in1, hid in2, out hid -> out in1 in2")
+decomp = tucker(b.numpy(), rank=300)
 
 # %%
-tucker.core.shape
+# print(torch.tensor(tl.tucker_to_tensor(decomp)).pow(2).mean().sqrt())
+# print(b.pow(2).mean().sqrt())
+
+# print(decomp.core.shape)
+# print(decomp.)

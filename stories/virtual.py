@@ -11,20 +11,15 @@ from IPython.display import display
 
 # %%
 torch.set_grad_enabled(False)
+color = dict(color_continuous_midpoint=0, color_continuous_scale="RdBu")
 
-name = "tdooms/TinyStories-2-256"
+name = "tdooms/TinyStories-1-256"
 config = Config.from_pretrained(name)
 model = Transformer.from_pretrained(name, config=config).cuda()
-vocab = model.vocab
 
 model.center_unembed().fold_norms()
+vocab = model.vocab
 
-# %%
-
-# values = einsum(model.w_e, model.w_v[0], "d_model n_vocab, n_head d_head d_model -> n_head d_head")
-# outputs = einsum(values, model.w_o[0], "n_head d_head, n_head d_model d_head -> n_head d_model")
-
-# print(outputs.shape)
 # %%
 
 layer, head = 0, 0
@@ -58,3 +53,56 @@ interaction = einsum(
 )
 
 vocab.get_max_activations(interaction, ["virtual", "direct"], 30)
+
+# %%
+i = vocab["girl"]
+e_full = torch.cat([model.w_e[None], model.ov[0] @ model.w_e[None]], dim=0)
+
+bi = einsum(
+    model.w_l[0], model.w_r[0], model.w_p[0], model.w_u[i],
+    "hid in1, hid in2, res hid, res -> in1 in2"
+)
+
+bi = 0.5 * (bi.T + bi)
+
+blocks = einsum(e_full, e_full, bi, "b1 hid1 tok1, b2 hid2 tok2, hid1 hid2 -> b1 b2 tok1 tok2")
+norms = torch.linalg.norm(blocks, dim=(2, 3))
+# norms = blocks.mean((2, 3))
+# %%
+px.imshow(norms.cpu(), **color)
+# %%
+
+for i in range(5):
+    block = blocks[i, -1]
+    # display(vocab.get_max_activations(block.T, ["input1", "input2"], 10))
+    rows = block.pow(2).mean(0).topk(10).indices
+    cols = block.pow(2).mean(1).topk(10).indices
+    display(pd.DataFrame(dict(in1=vocab.tokenize(rows), in2=vocab.tokenize(cols))))
+    
+# %%
+
+e_full = torch.cat([model.w_e[None], model.ov[0] @ model.w_e[None]], dim=0)
+# e_summed = e_full.pow(2).sum(-1).sqrt()
+e_summed = e_full.mean(-1)
+
+b = einsum(
+    model.w_l[0], model.w_r[0], model.w_p[0], model.w_u,
+    "hid in1, hid in2, res hid, out res -> out in1 in2"
+)
+b = 0.5 * (b.mT + b)
+means = einsum(e_summed, e_summed, b, "b1 hid1, b2 hid2, out hid1 hid2 -> out b1 b2")
+
+# %% 
+
+px.imshow(means[vocab["girl"]].cpu(), **color)
+# print(e_summed.shape)
+
+# %%
+vocab.tokenize(means[:, 0, 3].topk(10).indices)
+
+# %%
+
+qs = einsum(e_full, e_full, e_full, e_full, b, "b1 hid1 tok1, b2 hid2 tok2, b1 hid1 tok1, b2 hid2 tok2, out hid1 hid2 -> out b1 b2")
+print(qs.shape)
+
+px.imshow(qs[vocab["girl"]].sqrt().cpu(), **color)

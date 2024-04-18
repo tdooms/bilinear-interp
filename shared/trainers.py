@@ -43,7 +43,7 @@ def train_toy(model, cfg, per_instance=True):
     return fig, history
 
 
-def train_transformer(model, report_to="wandb"):
+def train_transformer(model, **kwargs):
     tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{model.config.n_vocab}-uncased", pad_token="[EOS]")
 
     def tokenize(dataset):
@@ -65,8 +65,9 @@ def train_transformer(model, report_to="wandb"):
         per_device_eval_batch_size=16,
         num_train_epochs=1,
         weight_decay=0.01,
-        report_to=report_to,
-        remove_unused_columns=False
+        report_to="wandb",
+        remove_unused_columns=False,
+        **kwargs
     )
 
     trainer = Trainer(
@@ -79,10 +80,8 @@ def train_transformer(model, report_to="wandb"):
         compute_metrics=accuracy,
     )
     
-    if report_to=="wandb": wandb.init(project="stories", config=model.config)
-    
+    wandb.init(project="stories", config=model.config)
     trainer.train()
-    
-    if report_to=="wandb": wandb.finish()
+    wandb.finish()
     
     return trainer
