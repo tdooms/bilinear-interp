@@ -13,7 +13,7 @@ from IPython.display import display
 torch.set_grad_enabled(False)
 color = dict(color_continuous_midpoint=0, color_continuous_scale="RdBu")
 
-name = "tdooms/TinyStories-1-256"
+name = "tdooms/TinyStories-1-512"
 config = Config.from_pretrained(name)
 model = Transformer.from_pretrained(name, config=config).cuda()
 
@@ -82,7 +82,6 @@ for i in range(5):
 # %%
 
 e_full = torch.cat([model.w_e[None], model.ov[0] @ model.w_e[None]], dim=0)
-# e_summed = e_full.pow(2).sum(-1).sqrt()
 e_summed = e_full.mean(-1)
 
 b = einsum(
@@ -94,7 +93,8 @@ means = einsum(e_summed, e_summed, b, "b1 hid1, b2 hid2, out hid1 hid2 -> out b1
 
 # %% 
 
-px.imshow(means[vocab["girl"]].cpu(), **color)
+# px.imshow(means[vocab["girl"]].cpu(), **color)
+px.imshow(means.mean(0).neg().cpu(), **color, title="Mean Interaction Strength")
 # print(e_summed.shape)
 
 # %%
@@ -105,4 +105,8 @@ vocab.tokenize(means[:, 0, 3].topk(10).indices)
 qs = einsum(e_full, e_full, e_full, e_full, b, "b1 hid1 tok1, b2 hid2 tok2, b1 hid1 tok1, b2 hid2 tok2, out hid1 hid2 -> out b1 b2")
 print(qs.shape)
 
-px.imshow(qs[vocab["girl"]].sqrt().cpu(), **color)
+px.imshow(qs[vocab["girl"]].cpu(), **color)
+
+# %%
+
+px.imshow(qs.mean(0).neg().cpu(), **color, title="Mean Interaction Strength")
