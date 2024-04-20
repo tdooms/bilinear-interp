@@ -56,17 +56,20 @@ df = pd.DataFrame(dict(x=base[:, 0], y=base[:, 1]))
 df["token"] = [vocab.inv[i] for i in range(len(vocab))]
 df["color"] = pd.read_csv("data/classification.csv")["kind"]
 
-idx = vocab["game"]
-df["size"] = ub[:, idx].pow(2).mean(1)
+# idx = vocab["game"]
+# df["size"] = ub[:, idx].pow(2).mean(1)
+# df["size"] = [0.1] * len(vocab) 
 
-px.scatter(df, x="x", y="y", hover_name="token", color="color", size="size", title="Weight Similarity").update_layout(title_x=0.5)
+px.scatter(df, x="x", y="y", hover_name="token", color="color", title="UB dimensionality reduction", height=800).update_layout(title_x=0.5)
 
 # %%
 # This is really cool!
 ub = einsum(model.b[0], model.w_u, "res in1 in2, out res -> out in1 in2")
+ub = 0.5 * (ub + ub.mT)
 base = UMAP(n_components=3).fit_transform(ub.flatten(start_dim=1))
 
 # %%
+# This studies the general case for the UB tensor
 df = pd.DataFrame(dict(x=base[:, 0], y=base[:, 1], z=base[:, 2]))
 df["token"] = [vocab.inv[i] for i in range(len(vocab))]
 df["color"] = pd.read_csv("data/classification.csv")["kind"]
@@ -74,7 +77,6 @@ df["color"] = pd.read_csv("data/classification.csv")["kind"]
 idx = vocab["game"]
 # sizes = einsum(ub, model.w_e[:, idx], model.w_e.mean(-1), "out emb1 emb2, emb1, emb2 -> out")
 sizes = einsum(ub, model.w_e, model.w_e, "out emb1 emb2, emb1 in, emb2 in -> out in")
-# df["size"] = torch.softmax(sizes[idx], dim=0)
 df["size"] = sizes.pow(2).mean(0)
 
 hover_data = dict(color=False, x=False, y=False, z=False, size=False)
@@ -84,35 +86,44 @@ fig = px.scatter_3d(df, x="x", y="y", z="z", hover_name="token", color="color", 
 fig
 
 # %%
-# sliders = [
-#     dict(
-#         active=0,
-#         pad={"t": 50},
-#         steps=[
-#             dict(
-#                 method="restyle",
-#                 args=[{"marker.size": sizes.pow(i).abs()}]
-#             )
-#             for i in range(4)
-#         ]
-#     )
-# ]
+# This studies the linear kernels extracted from the UB tensor
 
-# fig.update_layout(sliders=sliders)
-
+ub = einsum(model.b[0], model.w_u, "res in1 in2, out res -> out in1 in2")
+ub = 0.5 * (ub + ub.mT)
+vals, vecs = torch.linalg.eigh(ub)
 
 # %%
 
-lines = open("data/classes.txt").readlines()
-d = {}
+# vals, vecs = torch.linalg.eigh(model.b[0])
+# vecs = einsum(vecs, model.w_u, "res in1 in2, out res -> out in1 in2")
 
-for line in lines:
-    split = line.split(' ')
-    d[int(split[0])] = split[-1].strip()
+# %%
+idx = -1
+q = einsum(vecs[..., idx], vecs[..., idx], "b in1, b in2 -> b in1 in2").flatten(start_dim=1)
+umap = UMAP(n_components=3).fit_transform(q)
 
-res = ['Other'] * 4096
+df = pd.DataFrame(dict(x=umap[:, 0], y=umap[:, 1], z=umap[:, 2]))
+df["token"] = [vocab.inv[i] for i in range(len(vocab))]
+df["color"] = pd.read_csv("data/classification.csv")["kind"]
+df["size"] = (vecs[..., idx] @ model.w_e).diagonal().pow(2)
 
-for idx, word in d.items():
-    res[idx] = word
+hover_data = dict(color=False, x=False, y=False, z=False, size=False)
+fig = px.scatter_3d(df, x="x", y="y", z="z", hover_name="token", color="color", size="size", height=800, hover_data=hover_data)\
+    .update_layout(scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)))
 
-pd.DataFrame(dict(kind=res)).to_csv("data/classification.csv")
+fig
+# %%
+idx = -2
+q = einsum(vecs[..., idx], vecs[..., idx], "b in1, b in2 -> b in1 in2").flatten(start_dim=1)
+umap = UMAP(n_components=2).fit_transform(q)
+
+df = pd.DataFrame(dict(x=umap[:, 0], y=umap[:, 1]))
+df["token"] = [vocab.inv[i] for i in range(len(vocab))]
+df["color"] = pd.read_csv("data/classification.csv")["kind"]
+df["size"] = (vecs[..., idx] @ model.w_e).diagonal().pow(2)
+
+hover_data = dict(color=False, x=False, y=False, size=False)
+fig = px.scatter(df, x="x", y="y", hover_name="token", color="color", size="size", height=800, hover_data=hover_data, title="Second Positive Eigenvector of UB")\
+    .update_layout(title_x=0.5, scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)))
+
+fig

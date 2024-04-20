@@ -235,7 +235,6 @@ class Transformer(PreTrainedModel):
         
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.n_vocab, config.d_model),
-            # wpe = nn.Embedding(config.n_ctx, config.d_model),
             drop = nn.Dropout(config.embed_dropout),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
             n_f = RMSNorm(config.d_model, config.norm_bias) if config.rms else nn.LayerNorm(config.d_model, bias=config.norm_bias)
@@ -258,9 +257,6 @@ class Transformer(PreTrainedModel):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, input_ids, labels=None, **kwargs):
-        # pos = torch.arange(0, input_ids.size(1), dtype=torch.long, device=input_ids.device)
-        # embed = self.transformer.wte(input_ids) + self.transformer.wpe(pos)
-        
         embed = self.transformer.wte(input_ids)
         x = self.transformer.drop(embed)
         
