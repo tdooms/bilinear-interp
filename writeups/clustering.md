@@ -43,7 +43,7 @@ We can see that the network strongly separates the tokens into several clusters,
 
 ### UB Eigenvectors
 
-Until now, we've only really studied very low-level explanations of eigenvectors in the weights. Using this technique, we can do so a bit more comprehensively and actually understand what's going on (at least on a high level).
+Until now, we've only really studied very low-level explanations of eigenvectors in the weights. Using this technique, we can do so a bit more comprehensively and actually understand what's going on (at least on a high level). Concretely, we compute the eigendecomposition of UB (batched over output tokens, which is slightly slow but oh well) and then reduce the outer product of the linear kernels (the kernels themselves were not that clear).
 
 > The size of the dots represents the (squared) entries on the input diagonal. So this represents which (direct) inputs are important for the eigencomponents.
 
