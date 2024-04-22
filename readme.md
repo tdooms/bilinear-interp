@@ -23,12 +23,12 @@ Change root dir for VSCode interactive python files. Without this, it's not poss
 - [ ] Fix instability in larger bilinear transformers
   - [ ] Check if caused by bad initialization
   - [ ] Check if caused by wrong hyper-parameters
-- [ ] Learn about tensor decompositions
-  - [ ] Check Tucker-decomp & HOSVD
-  - [ ] Check exotic, tailored decompositions like INDSCAL & Three-way DEDICOM
+- [x] Learn about tensor decompositions
+  - [x] Check Tucker-decomp & HOSVD
+  - [x] Check exotic, tailored decompositions like INDSCAL & Three-way DEDICOM
 - [ ] Find attention head interpretability techniques
-  - [ ] Implement Michael's 4-tensor insight in an efficient manner
-  - [ ] Find other interpretable "shortcuts" to this study
+  - [x] Implement Michael's 4-tensor insight in an efficient manner
+  - [x] Find other interpretable "shortcuts" to this study
 
 ### Michael
 
@@ -39,6 +39,7 @@ Change root dir for VSCode interactive python files. Without this, it's not poss
 
 ### Open
 
-- 
+- [ ] In the 1-256 model, hidden dimensions 139, 77, 54 (224 to a lesser degree) are extremely important, why?
+  - Initial guess is that these dimensions encode a boolean indicator for preceding and following tokens.
 
 ### Problems

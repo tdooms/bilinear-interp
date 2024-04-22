@@ -2,12 +2,11 @@
 %load_ext autoreload
 %autoreload 2
 
-from stories.model import Transformer, Config
+from shared.transformer import Transformer, Config
 import plotly.express as px
-from shared.tensors import *
+from einops import *
 import torch
 import pandas as pd
-from bidict import bidict
 from IPython.display import display
 
 # %%

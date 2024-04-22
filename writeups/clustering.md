@@ -41,9 +41,15 @@ This section studies dimensionality reduction on the UB tensor. In short, this d
 
 We can see that the network strongly separates the tokens into several clusters, which seem to correspond very well to the ground truth labels. Inter cluster relations are very strong: all animals are closely together in the noun category, same goes for foods, objects and people. The people cluster is also closest to the name cluster, which is sensible.
 
-### UB Eigenvectors
 
-Until now, we've only really studied very low-level explanations of eigenvectors in the weights. Using this technique, we can do so a bit more comprehensively and actually understand what's going on (at least on a high level). Concretely, we compute the eigendecomposition of UB (batched over output tokens, which is slightly slow but oh well) and then reduce the outer product of the linear kernels (the kernels themselves were not that clear).
+### Augmenting Visualizations
+
+The above is interesting and shows a lot of structure in the matrix but doesn't really reveal what the model is doing.
+
+
+<!-- ### UB Eigenvectors
+
+Until now, we've only really studied very low-level explanations of eigenvectors in the weights. Using this technique, we can do so a bit more comprehensively and actually understand what's going on (at least on a high level). Concretely, we compute the eigendecomposition of UB (batched over output tokens) and then reduce the outer product of the linear kernels (the kernels themselves were not that clear).
 
 > The size of the dots represents the (squared) entries on the input diagonal. So this represents which (direct) inputs are important for the eigencomponents.
 
@@ -59,7 +65,7 @@ The second one is slightly more nuanced, it separates the starting ``Other`` tok
 - past: shouted, hung, helped (top)
 - current: build, make, need (right)
 
-It's actually fun how much structure there is. For conciseness we will stop here but you get the idea, the first eigencomponents strongly correspond to very interpretable features. Unfortunately, the middle eigencomponents don't; it's difficult to discern very clear clusters in them. They still make sense but it's obvious they represent more noisy patterns. The most negative eigencomponents also make sense though (also not shown).
+It's actually fun how much structure there is. For conciseness we will stop here but you get the idea, the first eigencomponents strongly correspond to very interpretable features. Unfortunately, the middle eigencomponents don't; it's difficult to discern very clear clusters in them. They still make sense but it's obvious they represent more noisy patterns. The most negative eigencomponents also make sense though (also not shown). -->
 
 ## Stuff that didn't work
 
@@ -70,6 +76,8 @@ It's actually fun how much structure there is. For conciseness we will stop here
 - Incorporate attention into this visualization
 
 ## Appendix
+
+### Token Classification Prompt
 
 ```
 I will give you a long list of words which I want you to classify into some categories. When choosing, pick the most specific one, for instance, Name over Noun. The categories are:
@@ -86,3 +94,9 @@ I will give you a long list of words which I want you to classify into some cate
 
 I want you to respond for each pair/line in the following way: 50 mary -> 50 Name
 ```
+
+### Cosine Similarity of Outer Product
+
+The eigen decomposition of the Q matrix will yield a set of linear kernels. Taking these kernels represent the best approximation of the Q matrix if they are outer multiplied together. As the outer product is taken between a kernel and itself, this is a very concise description of the input direction. We will now show some properties these kernels have in the calculation of distance metrics.
+
+Let $K_i$ be a linear kernel (an eigenvector of Q), then the cosine similarity $\bra{K_i}\ket{K_j}^2 = \bra{K_i \otimes K_i}\ket{K_j \otimes K_j}$. The proof is quite trivial and probably well known.

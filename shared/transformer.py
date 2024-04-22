@@ -7,11 +7,13 @@ from einops import *
 from transformers.modeling_outputs import CausalLMOutput
 from transformers import PretrainedConfig, PreTrainedModel, AutoTokenizer
 from bidict import bidict
+from typing import Union, List, Optional
+from torch import Tensor
+from jaxtyping import Int, Float
 
 class UBE:
     def __init__(self, inner) -> None:
         self.inner = inner
-    
     
     def diagonal(self, residual=False):
         inner = self.inner
@@ -44,11 +46,8 @@ class UBE:
         return inter
     
 class Vocab:
-    def __init__(self, tokenizer):
+    def __init__(self, tokenizer: AutoTokenizer):
         self.vocab = bidict(tokenizer.vocab)
-    
-    def tokenize(self, indices):
-        return [self.vocab.inv[i.item()] for i in indices]
     
     def get_max_activations(self, tensor, axes, k=10, largest=True, val_name="value"):
         top = torch.topk(tensor.flatten(), k=k, largest=largest)
@@ -58,9 +57,40 @@ class Vocab:
         data[val_name] = top.values.cpu()
         
         return pd.DataFrame(data)
+
+    @property
+    def tokens(self):
+        """Gets the full list of tokens in the vocabulary.
+
+        Returns:
+            List[str]: The list of tokens in the vocabulary. 
+        """
+        
+        return [self.inv[i] for i in range(len(self))]
     
-    def __getitem__(self, key):
-        return self.vocab[key]
+    def __getitem__(self, key: Union[str, int, List[int], Int[Tensor, "indices"]]):
+        """Gets the token/index associated with the given key.
+
+        Args:
+            key (Union[str, int, List[int], torch.Tensor]): The key to look up. Can be a handful of types.
+
+        Raises:
+            TypeError: If the key is not of type str, int, list, or torch.Tensor.
+
+        Returns:
+            token, index, or list of tokens: The token(s) associated with the given key.
+        """
+        
+        if isinstance(key, str):
+            return self.vocab[key]
+        elif isinstance(key, int):
+            return self.inv[key]
+        elif isinstance(key, list):
+            return [self.inv[i] for i in key]
+        elif isinstance(key, torch.Tensor):
+            return [self.inv[i.item()] for i in key]
+        else:
+            raise TypeError(f"Unsupported key type: {type(key)}")
     
     def __len__(self):
         return len(self.vocab)
@@ -115,7 +145,7 @@ class Config(PretrainedConfig):
 
 
 class Rotary(torch.nn.Module):
-    def __init__(self, dim, base=10000):
+    def __init__(self, dim: int, base: int = 10000):
         super().__init__()
         inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq)
@@ -123,7 +153,7 @@ class Rotary(torch.nn.Module):
         self.cos_cached = None
         self.sin_cached = None
 
-    def forward(self, seq_len, device):
+    def forward(self, seq_len: int, device):
         if seq_len != self.seq_len_cached:
             self.seq_len_cached = seq_len
             
@@ -147,18 +177,18 @@ def apply_rotary_pos_emb(q, k, cos, sin):
 
 
 class Attention(nn.Module):
-    def __init__(self, cfg) -> None:
+    def __init__(self, config: Config) -> None:
         super().__init__()
-        self.cfg = cfg
+        self.config = config
         
-        self.rotary = Rotary(cfg.d_model // cfg.n_head)
-        self.qkv = nn.Linear(cfg.d_model, 3 * cfg.d_model, bias=False)
-        self.o = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
-        self.dropout = nn.Dropout(cfg.resid_dropout)
+        self.rotary = Rotary(config.d_model // config.n_head)
+        self.qkv = nn.Linear(config.d_model, 3 * config.d_model, bias=False)
+        self.o = nn.Linear(config.d_model, config.d_model, bias=False)
+        self.dropout = nn.Dropout(config.resid_dropout)
     
-    def forward(self, x):
-        n_head = self.cfg.n_head
-        dropout = self.cfg.attn_dropout if self.training else 0
+    def forward(self, x: Float[Tensor, "batch seq d_model"]) -> Float[Tensor, "batch seq d_model"]:
+        n_head = self.config.n_head
+        dropout = self.config.attn_dropout if self.training else 0
         
         qkv = self.qkv(x)
         q, k, v = rearrange(qkv, 'batch seq (n_proj n_head d_head) -> n_proj batch n_head seq d_head', n_proj=3, n_head=n_head).unbind(dim=0)
@@ -174,30 +204,30 @@ class Attention(nn.Module):
 
 
 class BLP(nn.Module):
-    def __init__(self, cfg) -> None:
+    def __init__(self, config: Config) -> None:
         super().__init__()
         
-        self.w = nn.Linear(cfg.d_model, 2*cfg.d_hidden, bias=cfg.mlp_bias)
-        self.o = nn.Linear(cfg.d_hidden, cfg.d_model, bias=False)
-        self.dropout = nn.Dropout(cfg.mlp_dropout)
-        
-    def forward(self, x):
+        self.w = nn.Linear(config.d_model, 2 * config.d_hidden, bias=config.mlp_bias)
+        self.o = nn.Linear(config.d_hidden, config.d_model, bias=False) # I should change this to 'self.p'
+        self.drop = nn.Dropout(config.mlp_dropout)
+    
+    def forward(self, x: Float[Tensor, "batch seq d_model"]) -> Float[Tensor, "batch seq d_model"]:
         left, right = self.w(x).chunk(2, dim=-1)
-        return self.dropout(self.o(left * right))
+        return self.drop(self.o(left * right))
 
 
 class MLP(nn.Module):
-    def __init__(self, config) -> None:
+    def __init__(self, config: Config) -> None:
         super().__init__()
         
         self.w = nn.Linear(config.d_model, config.d_hidden)
         self.o = nn.Linear(config.d_hidden, config.d_model)
         
         self.gelu = nn.GELU()
-        self.dropout = nn.Dropout(config.mlp_dropout)
+        self.drop = nn.Dropout(config.mlp_dropout)
     
     def forward(self, x):
-        return self.dropout(self.o(self.gelu(self.w(x))))
+        return self.drop(self.o(self.gelu(self.w(x))))
 
 
 class RMSNorm(nn.Module):
@@ -212,7 +242,7 @@ class RMSNorm(nn.Module):
     
 
 class Layer(nn.Module):
-    def __init__(self, config) -> None:
+    def __init__(self, config: Config) -> None:
         super().__init__()
         
         self.attn = Attention(config)
@@ -228,7 +258,7 @@ class Layer(nn.Module):
         
 
 class Transformer(PreTrainedModel):
-    def __init__(self, config):
+    def __init__(self, config: Config):
         super().__init__(config)
         self.config = config
         self.tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{config.n_vocab}-uncased", pad_token="[EOS]")
@@ -276,6 +306,11 @@ class Transformer(PreTrainedModel):
             return CausalLMOutput(loss=loss, logits=logits)
     
     def center_unembed(self):
+        """Centers the unembedding layer of the model along the input dim.
+
+        Returns:
+            self: The model, also updated in place.
+        """
         self.lm_head.weight = nn.Parameter(self.lm_head.weight - self.lm_head.weight.mean(dim=1, keepdim=True))
         return self
         
@@ -297,11 +332,13 @@ class Transformer(PreTrainedModel):
     def vocab(self):
         return Vocab(self.tokenizer)
     
-    def _qkv(self):
+    @property
+    def w_qkv(self):
         qkv = torch.stack([self.transformer.h[i].attn.qkv.weight for i in range(self.config.n_layer)], dim=0)
         return rearrange(qkv, "n_layer (n_proj n_head d_head) d_model -> n_proj n_layer n_head d_head d_model", n_proj=3, n_head=self.config.n_head)
     
-    def _lr(self):
+    @property
+    def w_lr(self):
         lr = torch.stack([self.transformer.h[i].mlp.w.weight for i in range(self.config.n_layer)], dim=0)
         return rearrange(lr, "n_layer (n_proj d_hidden) d_model -> n_proj n_layer d_hidden d_model", n_proj=2)
     
@@ -312,11 +349,11 @@ class Transformer(PreTrainedModel):
     
     @property
     def w_l(self):
-        return self._lr()[0]
+        return self.w_lr[0]
     
     @property
     def w_r(self):
-        return self._lr()[1]
+        return self.w_lr[1]
     
     @property
     def w_p(self):
@@ -324,15 +361,15 @@ class Transformer(PreTrainedModel):
     
     @property
     def w_q(self):
-        return self._qkv()[0]
+        return self.w_qkv[0]
     
     @property
     def w_k(self):
-        return self._qkv()[1]
+        return self.w_qkv[1]
     
     @property
     def w_v(self):
-        return self._qkv()[2]
+        return self.w_qkv[2]
     
     @property
     def w_o(self):
@@ -342,14 +379,6 @@ class Transformer(PreTrainedModel):
     @property
     def w_e(self):
         return self.transformer.wte.weight.T
-    
-    @property
-    def w_pos(self):
-        return self.transformer.wpe.weight.T
-    
-    @property
-    def w_e_pos(self):
-        return self.w_e + self.w_pos
     
     @property
     def w_u(self):
@@ -367,7 +396,12 @@ class Transformer(PreTrainedModel):
     def ube(self):
         return UBE(self)
     
-    def summary(self):
+    def summary(self) -> pd.DataFrame:
+        """Summarizes the model's architecture and parameter count into a dataframe.
+
+        Returns:
+            pd.Dataframe: the summary dataframe
+        """
         names = [
             "total", 
             "emb.tok", 
@@ -402,7 +436,26 @@ class Transformer(PreTrainedModel):
 
 
     # @torch.no_grad()
-    def generate(self, prompt, max_length=None, temperature=1.0, top_k=None, clean=True):
+    def generate(
+            self,
+            prompt: str = "", 
+            max_length: Optional[int] = None, 
+            temperature: float = 1.0, 
+            top_k: Optional[int] = None, 
+            clean: bool = True
+        ):
+        """The default naive generation method for the model.
+
+        Args:
+            prompt (str, optional): the prompt. Defaults to "".
+            max_length (Optional[int], optional): the generation length, is always capped to the ctx length. Defaults to None.
+            temperature (float, optional): _description_. Defaults to 1.0.
+            top_k (Optional[int], optional): _description_. Defaults to None.
+            clean (bool, optional): _description_. Defaults to True.
+
+        Returns:
+            _type_: _description_
+        """
         input_ids = self.tokenizer.encode(prompt, return_tensors="pt")[..., :-1].to(self.device)
         max_length = min(max_length or self.config.n_ctx, self.config.n_ctx - input_ids.size(-1) - 1)
         

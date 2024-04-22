@@ -9,7 +9,7 @@ from datasets import load_dataset
 import torch
 # %%
 
-config = Config(n_layer=12, n_head=8, d_model=512, d_hidden=3*512)
+config = Config(n_layer=1, n_head=16, d_model=1024, d_hidden=3*1024)
 model = Transformer(config)
 
 model.summary()
@@ -21,7 +21,7 @@ model.generate("bing bong", max_length=10)
 trainer = train_transformer(model, fp16=True)
 
 # %%
-model.push_to_hub(f"TinyStories-12-512")
+model.push_to_hub(f"TinyStories-1-1024")
 # %%
 
 name = "tdooms/TinyStories-1-256-nothing-wo-pos"
