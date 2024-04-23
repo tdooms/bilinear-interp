@@ -53,7 +53,7 @@ class Vocab:
         top = torch.topk(tensor.flatten(), k=k, largest=largest)
         dims = torch.unravel_index(top.indices, tensor.size())
         
-        data = {k: self.tokenize(v.cpu()) for k, v in zip(axes, dims)}
+        data = {k: self.__getitem__(v.cpu()) for k, v in zip(axes, dims)}
         data[val_name] = top.values.cpu()
         
         return pd.DataFrame(data)
