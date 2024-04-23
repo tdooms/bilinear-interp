@@ -23,7 +23,7 @@ model.center_unembed().fold_norms()
 # prompt = "jimmy and his friend were at the zoo, jimmy wanted to see the largest animal. The largest animal is "
 prompt = "billy and john went to the park. billy gave a hug to"
 
-output = model.generate(prompt, 10, temperature=1, top_k=2)
+output = model.generate(prompt, 50, temperature=1, top_k=2)
 print(output)
 # %%
 

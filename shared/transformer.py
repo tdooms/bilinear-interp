@@ -154,7 +154,7 @@ class Rotary(torch.nn.Module):
         self.sin_cached = None
 
     def forward(self, seq_len: int, device):
-        if seq_len != self.seq_len_cached:
+        if (seq_len != self.seq_len_cached) or type(self.cos_cached) is not torch.Tensor:
             self.seq_len_cached = seq_len
             
             t = torch.arange(seq_len, device=device).type_as(self.inv_freq)
@@ -186,7 +186,7 @@ class Attention(nn.Module):
         self.o = nn.Linear(config.d_model, config.d_model, bias=False)
         self.dropout = nn.Dropout(config.resid_dropout)
     
-    def forward(self, x: Float[Tensor, "batch seq d_model"]) -> Float[Tensor, "batch seq d_model"]:
+    def forward(self, x: Float[Tensor, "batch seq d_model"], attention_mask=None) -> Float[Tensor, "batch seq d_model"]:
         n_head = self.config.n_head
         dropout = self.config.attn_dropout if self.training else 0
         
@@ -251,8 +251,8 @@ class Layer(nn.Module):
         self.n1 = RMSNorm(config.d_model, config.norm_bias) if config.rms else nn.LayerNorm(config.d_model, bias=config.norm_bias)
         self.n2 = RMSNorm(config.d_model, config.norm_bias) if config.rms else nn.LayerNorm(config.d_model, bias=config.norm_bias)
     
-    def forward(self, x):
-        x = x + self.attn(self.n1(x))
+    def forward(self, x, attention_mask=None):
+        x = x + self.attn(self.n1(x), attention_mask)
         x = x + self.mlp(self.n2(x))
         return x
         
@@ -286,12 +286,12 @@ class Transformer(PreTrainedModel):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, input_ids, labels=None, **kwargs):
+    def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
         embed = self.transformer.wte(input_ids)
         x = self.transformer.drop(embed)
         
         for layer in self.transformer.h:
-            x = layer(x)
+            x = layer(x, attention_mask)
         
         x = self.transformer.n_f(x)
         logits = self.lm_head(x)
