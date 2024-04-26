@@ -10,6 +10,7 @@ from bidict import bidict
 from typing import Union, List, Optional
 from torch import Tensor
 from jaxtyping import Int, Float
+from datasets import load_dataset
 
 class UBE:
     def __init__(self, inner) -> None:
@@ -57,6 +58,21 @@ class Vocab:
         data[val_name] = top.values.cpu()
         
         return pd.DataFrame(data)
+    
+    def describe(self, tensor, axes, k=10):
+        assert len(axes) == tensor.dim(), "Axis names must match tensor dimensions."
+        
+        hig = torch.topk(tensor.flatten(), k=k, largest=True)
+        low = torch.topk(tensor.flatten(), k=k, largest=False)
+        
+        values = torch.cat([hig.values, low.values.flip(0)])
+        indices = torch.cat([hig.indices, low.indices.flip(0)])
+        
+        dims = torch.unravel_index(indices, tensor.size())
+        
+        data = {k: self[v] for k, v in zip(axes, dims)}
+        return pd.DataFrame({**data, "value": values})
+        
 
     @property
     def tokens(self):
@@ -85,8 +101,10 @@ class Vocab:
             return self.vocab[key]
         elif isinstance(key, int):
             return self.inv[key]
-        elif isinstance(key, list):
+        elif isinstance(key, list) and all(isinstance(i, int) for i in key):
             return [self.inv[i] for i in key]
+        elif isinstance(key, list) and all(isinstance(i, str) for i in key):
+            return [self[i] for i in key]
         elif isinstance(key, torch.Tensor):
             return [self.inv[i.item()] for i in key]
         else:
@@ -433,6 +451,15 @@ class Transformer(PreTrainedModel):
         ]
         
         return pd.DataFrame(dict(name=names, parameters=parameters, dimensions=dims))
+
+    @classmethod
+    def from_pretrained(cls, n_layer=1, d_model=512, modifier='', **kwargs):
+        name = f"tdooms/TinyStories-{n_layer}-{d_model}{modifier}"
+        config = Config.from_pretrained(name)
+        return super(Transformer, cls).from_pretrained(name, config=config, **kwargs)
+    
+    def dataset(self, *args, **kwargs):
+        return load_dataset("tdooms/TinyStories", *args, **kwargs)
 
 
     # @torch.no_grad()

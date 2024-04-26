@@ -5,7 +5,7 @@
 from shared.transformer import Transformer, Config
 
 # %%
-name = "tdooms/TinyStories-4-256"
+name = "tdooms/TinyStories-1-256"
 config = Config.from_pretrained(name)
 model = Transformer.from_pretrained(name, config=config)
 
@@ -21,7 +21,8 @@ model.center_unembed().fold_norms()
 # prompt = "the lizard and the frog"
 # prompt = "once upon a time, it was raining, the grass was"
 # prompt = "jimmy and his friend were at the zoo, jimmy wanted to see the largest animal. The largest animal is "
-prompt = "billy and john went to the park. billy gave a hug to"
+# prompt = "billy and john went to the park. billy gave a hug to"
+prompt = "once upon a time the boys"
 
 output = model.generate(prompt, 50, temperature=1, top_k=2)
 print(output)
