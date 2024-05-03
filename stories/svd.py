@@ -2,7 +2,7 @@
 %load_ext autoreload
 %autoreload 2
 
-from shared.transformer import Transformer, Config
+from language.model import Transformer, Config
 import plotly.express as px
 from shared.tensors import *
 import torch

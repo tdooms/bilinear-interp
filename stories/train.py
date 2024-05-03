@@ -3,7 +3,7 @@
 %autoreload 2
 
 from itertools import product
-from shared.transformer import *
+from language.model import *
 from shared.trainers import train_transformer
 
 for layers, (dims, heads) in product([1, 2, 4], zip([256, 512], [4, 8])):        

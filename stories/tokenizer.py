@@ -47,5 +47,14 @@ tok2(dataset["text"][1], truncation=True, padding=True, max_length=256, add_spec
 
 # %%
 
-# print(sum(len(o) for o in out["input_ids"]) / len(out["input_ids"]))
-# px.histogram([len(o) for o in out["input_ids"]], nbins=100).show()
+from language.model import Transformer
+
+model = Transformer.from_pretrained(n_layer=1, d_model=256).cuda()
+dataset = model.dataset(split="train", collated=False)
+
+tokenized = dataset.map(model.tokenize, batched=True, remove_columns=dataset.column_names)
+
+# %%
+
+# tokenized = tokenized.remove_columns(["token_type_ids", "attention_mask"])
+tokenized.push_to_hub("TinyStories-tokenized")

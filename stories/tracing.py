@@ -2,7 +2,7 @@
 %load_ext autoreload
 %autoreload 2
 
-from shared.transformer import Transformer, Config
+from language.model import Transformer
 from nnsight import NNsight
 import plotly.express as px
 import plotly.figure_factory as ff
@@ -11,16 +11,13 @@ import torch
 import pandas as pd
 from einops import *
 
-from datasets import load_dataset
 from dictionary_learning import AutoEncoder
 
 # %%
 device = 'cuda:0'
 color = dict(color_continuous_midpoint=0, color_continuous_scale="RdBu")
 
-name = "tdooms/TinyStories-1-256"
-config = Config.from_pretrained(name)
-model = Transformer.from_pretrained(name, config=config).to(device).center_unembed()
+model = Transformer.from_pretrained(n_layer=1, d_model=256).to(device).center_unembed()
 
 vocab = model.vocab
 tokenizer = model.tokenizer
