@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 from tqdm import tqdm
 import numpy as np
-from mnist_interp.utils import *
+from mnist.utils import *
 
 def create_Q_from_upper_tri_idxs(Q_vec, idxs):
     triu_indices = torch.triu_indices(len(idxs),len(idxs))
