@@ -15,13 +15,14 @@ def create_Q_from_upper_tri_idxs(Q_vec, idxs):
     return Q
 
 class EigenvectorPlotter():
-    def __init__(self, B, logits, data_loader = None, img_size=(28,28)):
+    # Eigenvector Plotter for image-based datasets
+    def __init__(self, B, logits, dataset = None, img_size=(28,28)):
         self.B = B      #[component, in1, in2]
         self.logits = logits    #[component, out]
-        self.data_loader = data_loader
+        self.dataset = dataset
         self.img_size = img_size
 
-    def plot_component(self, component, suptitle=None, topk_eigs = 3, sort='eigs', 
+    def plot_component(self, component, suptitle=None, topk_eigs = 3, topk_acts = 3, sort='eigs', 
         vmax=None, classes = None, **kwargs):
         device = self.B.device
         Q = self.B[component]
@@ -29,8 +30,8 @@ class EigenvectorPlotter():
         eigvals, eigvecs = torch.linalg.eigh(Q)
         eigvals_orig = eigvals.clone()
 
-        if self.data_loader is not None:
-            mean_acts, avg_sims = self.get_mean_eigen_acts(eigvecs, eigvals, self.data_loader)
+        if self.dataset is not None:
+            mean_acts, avg_sims = self.get_mean_eigen_acts(eigvecs, eigvals, self.dataset)
         else:
             mean_acts, avg_sims = torch.ones(self.img_size[0]*self.img_size[1]), None  
 
@@ -43,55 +44,93 @@ class EigenvectorPlotter():
         if vmax is None:
             vmax = 0.9 * images[torch.logical_not(images.isnan())].abs().max()
 
+        #get top input activations & define mosaic
+        if self.dataset is not None:
+            top_imgs, top_acts = self.get_top_act_images(eigvecs, eigvals, self.dataset, k=topk_acts)
+            mosaic = []
+            for j in range(topk_acts):
+                mosaic_line = ["logits"] + [f"pos_act_{i}_{j}" if odd else f"pos_eig_{i}" for i in range(topk_eigs) for odd in range(2)]
+                mosaic.append(mosaic_line)
+
+            for j in range(topk_acts):
+                mosaic_line = ["eig_dist"] + [f"neg_act_{i}_{j}" if odd else f"neg_eig_{i}" for i in range(topk_eigs) for odd in range(2)]
+                mosaic.append(mosaic_line)
+
+            width_ratios = [1.05] + [0.25 if odd else 1 for i in range(topk_eigs) for odd in range(2)]
+            height_ratios = 2*topk_acts * [1]
+        else:
+            mosaic = []
+            mosaic_line = ["logits"] + [f"pos_eig_{i}" for i in range(topk_eigs)]
+            mosaic.append(mosaic_line)
+            
+            mosaic_line = ["eig_dist"] + [f"neg_eig_{i}" for i in range(topk_eigs)]
+            mosaic.append(mosaic_line)
+
+            width_ratios = [1.05] + topk_eigs*[1]
+            height_ratios = 2*[1]
+        mosaic_labels = list({label for l in mosaic for label in l})
+
         #subplots
-        figsize = (4*(topk_eigs+1), 10)
-        plt.subplots(2, topk_eigs+1, figsize=figsize, dpi=300, layout="compressed",
-                    width_ratios=[1.05]+topk_eigs*[1], height_ratios=[1, 1]
+        figsize = (5.5*(topk_eigs+1), 10)
+        fig, axs = plt.subplot_mosaic(mosaic, figsize=figsize, dpi=300, layout="compressed",
+                    width_ratios=width_ratios, height_ratios=height_ratios
                     )
-        
-        #plot logits
-        plt.subplot(2, topk_eigs+1, 1)
-        self.plot_logits(component, classes)
 
-        #plot eigenval dist
-        plt.subplot(2, topk_eigs+1, topk_eigs+2)
-        self.plot_eigvals(eigvals_orig)
+        for label in mosaic_labels:
+            if label=='logits':
+                self.plot_logits(axs[label], component, classes)
+            
+            elif label=='eig_dist':
+                self.plot_eigvals(axs[label], eigvals_orig)
+            
+            elif label.startswith('pos_eig'):
+                i = int(label.split('_')[-1])
+                title = title_fn(eigvals[i], mean_acts[i])
+                self.plot_eigenvector(axs[label], images[i], i, topk_eigs, vmax, title=title, **kwargs)
+            
+            elif label.startswith('neg_eig'):
+                i = int(label.split('_')[-1])
+                j = topk_eigs + i
+                title = title_fn(eigvals[j], mean_acts[j])
+                self.plot_eigenvector(axs[label], images[j], i, topk_eigs, vmax, title=title, **kwargs)
+            
+            elif label.startswith('pos_act'):
+                eig_idx = int(label.split('_')[2])
+                topk_idx = int(label.split('_')[3])
+                self.plot_input_image(axs[label], top_imgs, top_acts, topk_idx, eig_idx)
 
-        #plot positive eigenvalues
-        for i in range(topk_eigs):
-            plt.subplot(2, topk_eigs+1, 2+i)
-            title = title_fn(eigvals[i], mean_acts[i])
-            self.plot_eigenvector(images[i], i, topk_eigs, vmax, title=title, **kwargs)
-
-        #plot negative eigenvalues
-        for i in range(topk_eigs):
-            plt.subplot(2, topk_eigs + 1, topk_eigs + 2 + (i+1))
-            j = topk_eigs + i
-            title = title_fn(eigvals[j], mean_acts[j])
-            self.plot_eigenvector(images[j], i, topk_eigs, vmax, title=title, **kwargs)
+            elif label.startswith('neg_act'):
+                eig_idx = topk_eigs + int(label.split('_')[2])
+                topk_idx = int(label.split('_')[3])
+                self.plot_input_image(axs[label], top_imgs, top_acts, topk_idx, eig_idx)
 
         plt.figtext(0.05,0.98,f"{suptitle}", va="center", ha="left", size=25)
         x = (1 + 0.5 * topk_eigs) / (1 + topk_eigs)
-        plt.figtext(x,0.96,"Eigenvectors", va="center", ha="center", size=24)
+        plt.figtext(x,0.98,"Eigenvectors", va="center", ha="center", size=24)
         plt.show()
 
     @staticmethod
-    def get_mean_eigen_acts(eigvecs, eigvals, data_loader, img_size=(28,28)):
+    def get_mean_eigen_acts(eigvecs, eigvals, dataset, img_size=(28,28)):
         device = eigvecs.device
-        acts_list = []
-        sims_list = []
-        for images, labels in data_loader:
-            images = images.reshape(-1, img_size[0]*img_size[1])
-            sims = (images @ eigvecs)
-            acts = eigvals * (images @ eigvecs)**2
-            acts_list.append(acts)
-            sims_list.append(sims)
-        acts = torch.cat(acts_list, dim=0)
-        sims = torch.cat(sims_list, dim=0)
+        images = dataset.data.to(device).reshape(-1, img_size[0]*img_size[1])/255 #convert uint8 to float
+        sims = (images @ eigvecs)
+        acts = eigvals * (sims)**2
         return acts.mean(dim=0), sims.mean(dim=0)
 
+    @staticmethod
+    def get_top_act_images(eigvecs, eigvals, dataset, k = 3, img_size=(28,28)):
+        device = eigvecs.device
+        images = dataset.data.to(device).reshape(-1, img_size[0]*img_size[1])/255 #convert uint8 to float
+        sims = (images @ eigvecs)
+        acts = eigvals * (sims)**2
+        topk_idxs = acts.abs().topk(k, dim=0).indices
+        eig_idxs = torch.arange(eigvecs.shape[1]).repeat(k,1)
+        top_acts = acts[topk_idxs, eig_idxs]
+        top_imgs = images[topk_idxs]
+        return top_imgs, top_acts
+
     def get_title_fn(self, sort):
-        if self.data_loader is not None:
+        if self.dataset is not None:
             if sort == 'activations':
                 return lambda x,y: f"Mean Act={y:.2f}, Eig={x:.2f}"
             else:
@@ -108,7 +147,7 @@ class EigenvectorPlotter():
         eigvecs = eigvecs * signs.unsqueeze(0)
         
         #sort
-        if (self.data_loader is not None) and (sort=='activations'):
+        if (self.dataset is not None) and (sort=='activations'):
             sort_idxs = mean_acts.argsort()
         else:
             sort_idxs = eigvals.argsort()
@@ -124,37 +163,54 @@ class EigenvectorPlotter():
         mean_acts = mean_acts[eig_indices]
         return eigvecs, eigvals, mean_acts
 
-    def plot_logits(self, component, classes):
+    def plot_logits(self, ax, component, classes):
         logits = self.logits[component]
         if classes is None:
             classes = torch.arange(len(logits))
-        plt.bar(range(len(classes)), logits.cpu().detach())
-        plt.title('Logit Outputs', fontsize=20)
-        plt.xticks(classes, fontsize=15)
-        plt.yticks(fontsize=15)
-        plt.xlabel('Classes', fontsize=18)
-        plt.ylabel('Logits', fontsize=18)
+            rotation = None
+            direction = None
+            pad = 0
+            va = None
+        else:
+            rotation = 'vertical'
+            direction = 'in'
+            pad = -10
+            va = 'bottom'
+        ax.bar(range(len(classes)), logits.cpu().detach())
+        ax.set_title('Logit Outputs', fontsize=20)
+        ax.set_xticks(range(len(classes)), classes, rotation=rotation, va=va)
+        ax.tick_params(labelsize=15)
+        ax.tick_params(axis='x', direction=direction, pad=pad)
+        ax.set_xlabel('Classes', fontsize=18)
+        ax.set_ylabel('Logits', fontsize=18)
 
-    def plot_eigvals(self, eigvals):
-        plt.plot(eigvals.cpu().detach(), '.-')
-        plt.ylabel('Eigenvalues', fontsize=18)
-        plt.xlabel('Index', fontsize=18)
+    def plot_eigvals(self, ax, eigvals):
+        ax.plot(eigvals.cpu().detach(), '.-')
+        ax.set_ylabel('Eigenvalues', fontsize=18)
+        ax.set_xlabel('Index', fontsize=18)
 
-    def plot_eigenvector(self, image, i, topk_eigs, vmax, title=None, **kwargs):        
+    def plot_eigenvector(self, ax, image, i, topk_eigs, vmax, title=None, **kwargs):        
         if 'cmap' not in kwargs:
             kwargs['cmap'] = 'RdBu_r'
         if 'norm' in kwargs:
-            plt.imshow(image.reshape(*self.img_size).cpu().detach(), **kwargs)
+            im = ax.imshow(image.reshape(*self.img_size).cpu().detach(), **kwargs)
         else:
-            plt.imshow(image.reshape(*self.img_size).cpu().detach(), 
+            im = ax.imshow(image.reshape(*self.img_size).cpu().detach(), 
             vmin=-vmax, vmax=vmax, **kwargs)
         if title:
-            plt.title(title, fontsize=15)
-        plt.xticks([])
-        plt.yticks([])
+            ax.set_title(title, fontsize=15)
+        ax.set_xticks([])
+        ax.set_yticks([])
         if i == topk_eigs-1:
-            cbar = plt.colorbar()
-            cbar.ax.tick_params(labelsize=14)
+            cbar = plt.colorbar(im)
+            cbar.set_ticks(ticks=[vmax, 0, -vmax])
+            cbar.ax.tick_params(labelsize=10)
+
+    def plot_input_image(self, ax, top_imgs, top_acts, topk_idx, eig_idx):
+        ax.imshow(top_imgs[topk_idx, eig_idx].reshape(*self.img_size), cmap='Greys', vmin=0, vmax=1)
+        ax.set_title(f'{top_acts[topk_idx, eig_idx]:.2f}')
+        ax.set_xticks([])
+        ax.set_yticks([])
 
 
 def plot_B_tensor_image_eigenvectors(B,  idx, **kwargs):
