@@ -230,7 +230,7 @@ def plot_B_tensor_image_eigenvectors(B,  idx, **kwargs):
 
 def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
     topk_eigs = 4, img_size = (28,28), upper_triangular = True, classes = np.arange(10),
-    title = 'SVD Component', vmax=None, data_loader = None, sort='eigs'):
+    title = 'SVD Component', vmax=None, dataset = None, sort='eigs'):
 
     device = svd.V.device
     if idxs is None:
@@ -249,7 +249,7 @@ def plot_full_svd_component_for_image(svd, W_out, svd_comp, idxs=None,
         Q = svd.V[:,svd_comp].reshape(len(idxs), len(idxs))
     B = Q.unsqueeze(0)
 
-    Plotter = EigenvectorPlotter(B, logits, data_loader = data_loader, img_size=img_size)
+    Plotter = EigenvectorPlotter(B, logits, dataset = dataset, img_size=img_size)
     Plotter.plot_component(0, suptitle=title, topk_eigs=topk_eigs, sort=sort, vmax=vmax, classes=classes)
 
 
