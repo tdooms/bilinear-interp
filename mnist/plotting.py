@@ -199,7 +199,7 @@ class EigenvectorPlotter():
         ax.set_ylabel('Logits', fontsize=18)
 
     def plot_eigvals(self, ax, eigvals):
-        ax.plot(eigvals.cpu().detach(), '.-')
+        ax.plot(eigvals.cpu().detach(), '.-', markersize=10)
         ax.set_title('Spectrum', fontsize=18)
         ax.set_ylabel('Eigenvalues', fontsize=18)
         # ax.set_xlabel('Index', fontsize=18)
