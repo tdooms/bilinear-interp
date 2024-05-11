@@ -22,7 +22,7 @@ class EigenvectorPlotter():
         self.dataset = dataset
         self.img_size = img_size
 
-    def plot_component(self, component, suptitle=None, topk_eigs = 3, topk_acts = 3, sort='eigs', 
+    def plot_component(self, component, suptitle=None, topk_eigs = 3, sort='eigs', 
         vmax=None, classes = None, **kwargs):
         device = self.B.device
         Q = self.B[component]
@@ -46,67 +46,81 @@ class EigenvectorPlotter():
 
         #get top input activations & define mosaic
         if self.dataset is not None:
-            top_imgs, top_acts = self.get_top_act_images(eigvecs, eigvals, self.dataset, k=topk_acts)
+            top_imgs, top_acts = self.get_top_act_images(eigvecs, eigvals, self.dataset, k=4)
+            
+            mosaics = []
+
             mosaic = []
-            for j in range(topk_acts):
-                mosaic_line = ["logits"] + [f"pos_act_{i}_{j}" if odd else f"pos_eig_{i}" for i in range(topk_eigs) for odd in range(2)]
-                mosaic.append(mosaic_line)
+            widths = [1.05]
+            for j in range(3):
+                line = ["logits"]
+                for i in range(topk_eigs):
+                    line += [f"pos_eig_{i}", f"pos_act_{i}_{j}"]
+                    if j == 0:
+                        widths += [1, 0.33]
+                mosaic.append(line)
+            mosaics.append(mosaic)
 
-            for j in range(topk_acts):
-                mosaic_line = ["eig_dist"] + [f"neg_act_{i}_{j}" if odd else f"neg_eig_{i}" for i in range(topk_eigs) for odd in range(2)]
-                mosaic.append(mosaic_line)
-
-            width_ratios = [1.05] + [0.25 if odd else 1 for i in range(topk_eigs) for odd in range(2)]
-            height_ratios = 2*topk_acts * [1]
+            mosaic = []
+            for j in range(3):
+                line = ["eig_dist"]
+                for i in range(topk_eigs):
+                    line += [f"neg_eig_{i}", f"neg_act_{i}_{j}"]
+                mosaic.append(line)
+            mosaics.append(mosaic)
         else:
-            mosaic = []
+            mosaics = []
             mosaic_line = ["logits"] + [f"pos_eig_{i}" for i in range(topk_eigs)]
-            mosaic.append(mosaic_line)
+            mosaics.append(mosaic_line)
             
             mosaic_line = ["eig_dist"] + [f"neg_eig_{i}" for i in range(topk_eigs)]
-            mosaic.append(mosaic_line)
+            mosaics.append(mosaic_line)
 
-            width_ratios = [1.05] + topk_eigs*[1]
-            height_ratios = 2*[1]
-        mosaic_labels = list({label for l in mosaic for label in l})
+            widths = [1.05] + topk_eigs*[1]
 
         #subplots
-        figsize = (5.5*(topk_eigs+1), 10)
-        fig, axs = plt.subplot_mosaic(mosaic, figsize=figsize, dpi=300, layout="compressed",
-                    width_ratios=width_ratios, height_ratios=height_ratios
-                    )
+        h = 4
+        w = 4
+        figsize = (w * (topk_eigs*(1.33)+1), 2 * h + 0)
 
-        for label in mosaic_labels:
-            if label=='logits':
-                self.plot_logits(axs[label], component, classes)
-            
-            elif label=='eig_dist':
-                self.plot_eigvals(axs[label], eigvals_orig)
-            
-            elif label.startswith('pos_eig'):
-                i = int(label.split('_')[-1])
-                title = title_fn(eigvals[i], mean_acts[i])
-                self.plot_eigenvector(axs[label], images[i], i, topk_eigs, vmax, title=title, **kwargs)
-            
-            elif label.startswith('neg_eig'):
-                i = int(label.split('_')[-1])
-                j = topk_eigs + i
-                title = title_fn(eigvals[j], mean_acts[j])
-                self.plot_eigenvector(axs[label], images[j], i, topk_eigs, vmax, title=title, **kwargs)
-            
-            elif label.startswith('pos_act'):
-                eig_idx = int(label.split('_')[2])
-                topk_idx = int(label.split('_')[3])
-                self.plot_input_image(axs[label], top_imgs, top_acts, topk_idx, eig_idx)
+        fig = plt.figure(figsize=figsize, layout='constrained')
+        subfigs = fig.subfigures(2, 1)
 
-            elif label.startswith('neg_act'):
-                eig_idx = topk_eigs + int(label.split('_')[2])
-                topk_idx = int(label.split('_')[3])
-                self.plot_input_image(axs[label], top_imgs, top_acts, topk_idx, eig_idx)
+        #first row
+        subfigs[0].suptitle('Positive Eigenvectors', fontsize=21)
+        width_ratios = [1] + topk_eigs * [1.3]
+        row_subfigs = subfigs[0].subfigures(1,1+topk_eigs, 
+                                            width_ratios=width_ratios,
+                                            # wspace = 0.07
+                                            )
+        
+        ax = row_subfigs[0].add_subplot(111)
+        self.plot_logits(ax, component, classes)
+        
+        for i, subfig in enumerate(row_subfigs[1:]):
+            colorbar = True if i == topk_eigs-1 else False
+            title = title_fn(eigvals[i], mean_acts[i])
+            self.plot_eigenvector(subfig, images[i], top_imgs[:,i], top_acts[:,i], colorbar, vmax, title=title, **kwargs)
 
-        plt.figtext(0.05,0.98,f"{suptitle}", va="center", ha="left", size=25)
-        x = (1 + 0.5 * topk_eigs) / (1 + topk_eigs)
-        plt.figtext(x,0.98,"Eigenvectors", va="center", ha="center", size=24)
+        #second row
+        subfigs[1].suptitle('Negative Eigenvectors', fontsize=21)
+        width_ratios = [1] + topk_eigs * [1.3]
+        row_subfigs = subfigs[1].subfigures(1,1+topk_eigs, 
+                                            width_ratios=width_ratios,
+                                            # wspace = 0.07
+                                            )
+        
+        
+        ax = row_subfigs[0].add_subplot(111)
+        self.plot_eigvals(ax, eigvals_orig)
+        
+        for i, subfig in enumerate(row_subfigs[1:]):
+            colorbar = True if i == topk_eigs-1 else False
+            j = topk_eigs + i
+            title = title_fn(eigvals[j], mean_acts[j])
+            self.plot_eigenvector(subfig, images[j], top_imgs[:,j], top_acts[:,j], colorbar, vmax, title=title, **kwargs)
+
+        subfigs[0].text(0.1,0.99,f"{suptitle}", va="center", ha="left", size=27)
         plt.show()
 
     @staticmethod
@@ -177,19 +191,25 @@ class EigenvectorPlotter():
             pad = -10
             va = 'bottom'
         ax.bar(range(len(classes)), logits.cpu().detach())
-        ax.set_title('Logit Outputs', fontsize=20)
+        ax.set_title('Logit Outputs', fontsize=18)
         ax.set_xticks(range(len(classes)), classes, rotation=rotation, va=va)
         ax.tick_params(labelsize=15)
         ax.tick_params(axis='x', direction=direction, pad=pad)
-        ax.set_xlabel('Classes', fontsize=18)
+        # ax.set_xlabel('Classes', fontsize=18)
         ax.set_ylabel('Logits', fontsize=18)
 
     def plot_eigvals(self, ax, eigvals):
         ax.plot(eigvals.cpu().detach(), '.-')
+        ax.set_title('Spectrum', fontsize=18)
         ax.set_ylabel('Eigenvalues', fontsize=18)
-        ax.set_xlabel('Index', fontsize=18)
+        # ax.set_xlabel('Index', fontsize=18)
 
-    def plot_eigenvector(self, ax, image, i, topk_eigs, vmax, title=None, **kwargs):        
+    def plot_eigenvector(self, fig, image, top_imgs, top_acts, colorbar, vmax, title=None, **kwargs):  
+        subfigs = fig.subfigures(1,2, width_ratios=[1, 0.18], wspace=0)
+        if title:
+            fig.suptitle(title, fontsize=18)
+
+        ax = subfigs[0].add_subplot(111)
         if 'cmap' not in kwargs:
             kwargs['cmap'] = 'RdBu_r'
         if 'norm' in kwargs:
@@ -197,18 +217,20 @@ class EigenvectorPlotter():
         else:
             im = ax.imshow(image.reshape(*self.img_size).cpu().detach(), 
             vmin=-vmax, vmax=vmax, **kwargs)
-        if title:
-            ax.set_title(title, fontsize=15)
         ax.set_xticks([])
         ax.set_yticks([])
-        if i == topk_eigs-1:
-            cbar = plt.colorbar(im)
+        if colorbar:
+            cbar = plt.colorbar(im, fraction=0.046, pad=0.04)
             cbar.set_ticks(ticks=[vmax, 0, -vmax])
             cbar.ax.tick_params(labelsize=10)
 
-    def plot_input_image(self, ax, top_imgs, top_acts, topk_idx, eig_idx):
-        ax.imshow(top_imgs[topk_idx, eig_idx].reshape(*self.img_size), cmap='Greys', vmin=0, vmax=1)
-        ax.set_title(f'{top_acts[topk_idx, eig_idx]:.2f}')
+        axs = subfigs[1].subplots(3,1)
+        for i, ax in enumerate(axs):
+            self.plot_input_image(ax, top_imgs[i], top_acts[i])
+
+    def plot_input_image(self, ax, img, act):
+        ax.imshow(img.reshape(*self.img_size), cmap='Greys', vmin=0, vmax=1)
+        ax.set_title(f'act={act:.1f}')
         ax.set_xticks([])
         ax.set_yticks([])
 
