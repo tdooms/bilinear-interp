@@ -120,7 +120,7 @@ class EigenvectorPlotter():
             title = title_fn(eigvals[j], mean_acts[j])
             self.plot_eigenvector(subfig, images[j], top_imgs[:,j], top_acts[:,j], colorbar, vmax, title=title, **kwargs)
 
-        subfigs[0].text(0.1,0.99,f"{suptitle}", va="center", ha="left", size=27)
+        subfigs[0].text(0.05,0.99,f"{suptitle}", va="center", ha="left", size=27)
         plt.show()
 
     @staticmethod
