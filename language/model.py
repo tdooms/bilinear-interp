@@ -53,6 +53,7 @@ class UBE:
 class Vocab:
     def __init__(self, tokenizer: AutoTokenizer):
         self.vocab = bidict(tokenizer.vocab)
+        self.tokenizer = tokenizer
     
     def get_max_activations(self, tensor, axes, k=10, largest=True, val_name="value"):
         top = torch.topk(tensor.flatten(), k=k, largest=largest)
@@ -77,7 +78,12 @@ class Vocab:
         data = {k: self[v] for k, v in zip(axes, dims)}
         return pd.DataFrame({**data, "value": values})
         
-
+    def make_labels(self, prompt):
+        tokens = self.tokenizer.tokenize(prompt)
+        counts = [Counter(tokens[:i])[token] for i, token in enumerate(tokens)]
+        empty = '‎'
+        return ["BOS"] + [f"{tok} {empty * cnt}" for tok, cnt in zip(tokens, counts)] + ["EOS"]
+    
     @property
     def tokens(self):
         """Gets the full list of tokens in the vocabulary.
@@ -139,8 +145,8 @@ class Config(PretrainedConfig):
         resid_dropout: float = 0.0,
         mlp_dropout: float = 0.0,
         embed_dropout: float = 0.0,
-        bilinear: bool = True,
-        rms: bool = True,
+        mlp: str = 'blp',
+        normalization: str | None = 'rms',
         norm_bias: bool = False,
         mlp_bias: bool = False,
         **kwargs
@@ -157,8 +163,8 @@ class Config(PretrainedConfig):
         self.mlp_dropout = mlp_dropout
         self.embed_dropout = embed_dropout
         
-        self.bilinear = bilinear
-        self.rms = rms
+        self.mlp = mlp
+        self.normalization = normalization
         
         self.norm_bias = norm_bias
         self.mlp_bias = mlp_bias
@@ -251,13 +257,27 @@ class MLP(nn.Module):
         super().__init__()
         
         self.w = nn.Linear(config.d_model, config.d_hidden)
-        self.o = nn.Linear(config.d_hidden, config.d_model)
+        self.o = nn.Linear(config.d_hidden, config.d_model, bias=False)
         
         self.gelu = nn.GELU()
         self.drop = nn.Dropout(config.mlp_dropout)
     
     def forward(self, x):
         return self.drop(self.o(self.gelu(self.w(x))))
+
+class GLP(nn.Module):
+    def __init__(self, config: Config) -> None:
+        super().__init__()
+        
+        self.w = nn.Linear(config.d_model, 2 * config.d_hidden, bias=config.mlp_bias)
+        self.o = nn.Linear(config.d_hidden, config.d_model, bias=False) # I should change this to 'self.p'
+        
+        self.gelu = nn.GELU()
+        self.drop = nn.Dropout(config.mlp_dropout)
+    
+    def forward(self, x):
+        left, right = self.w(x).chunk(2, dim=-1)
+        return self.drop(self.o(self.gelu(left) * right))
 
 
 class RMSNorm(nn.Module):
@@ -269,17 +289,27 @@ class RMSNorm(nn.Module):
     
     def forward(self, x):
         return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.weight + (0 if self.bias is None else self.bias)
-    
+
+
+def normalization(kind: str | None, *args, **kwargs):
+    opts = {
+        'rms': RMSNorm,
+        'ln': nn.LayerNorm,
+        None: nn.Identity
+    }
+    return opts[kind](*args, **kwargs)
 
 class Layer(nn.Module):
     def __init__(self, config: Config) -> None:
         super().__init__()
         
-        self.attn = Attention(config)
-        self.mlp = BLP(config) if config.bilinear else MLP(config)
+        mlp_fn = dict(blp=BLP, mlp=MLP, glp=GLP)
         
-        self.n1 = RMSNorm(config.d_model, config.norm_bias) if config.rms else nn.LayerNorm(config.d_model, bias=config.norm_bias)
-        self.n2 = RMSNorm(config.d_model, config.norm_bias) if config.rms else nn.LayerNorm(config.d_model, bias=config.norm_bias)
+        self.attn = Attention(config)
+        self.mlp = mlp_fn[config.mlp](config)
+        
+        self.n1 = normalization(config.normalization, config.d_model, config.norm_bias)
+        self.n2 = normalization(config.normalization, config.d_model, config.norm_bias)
     
     def forward(self, x, attention_mask=None):
         x = x + self.attn(self.n1(x), attention_mask)
@@ -297,7 +327,7 @@ class Transformer(PreTrainedModel):
             wte = nn.Embedding(config.n_vocab, config.d_model),
             drop = nn.Dropout(config.embed_dropout),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
-            n_f = RMSNorm(config.d_model, config.norm_bias) if config.rms else nn.LayerNorm(config.d_model, bias=config.norm_bias)
+            n_f = normalization(config.normalization, config.d_model, config.norm_bias)
         ))
         
         self.lm_head = nn.Linear(config.d_model, config.n_vocab, bias=False)
@@ -463,27 +493,32 @@ class Transformer(PreTrainedModel):
         ]
         
         return pd.DataFrame(dict(name=names, parameters=parameters, dimensions=dims))
-    
-    def make_labels(self, prompt):
-        tokens = self.tokenizer.tokenize(prompt)
-        counts = [Counter(tokens[:i])[token] for i, token in enumerate(tokens)]
-        empty = '‎'
-        return ["BOS"] + [f"{tok} {empty * cnt}" for tok, cnt in zip(tokens, counts)] + ["EOS"]
 
     @classmethod
-    def from_pretrained(cls, n_layer=1, d_model=512, modifier='', **kwargs):
-        name = f"tdooms/TinyStories-{n_layer}-{d_model}{modifier}"
+    def from_config(csl, *args, **kwargs):
+        config = Config(*args, **kwargs)
+        return Transformer(config)
+        
+    @classmethod
+    def from_pretrained(cls, n_layer=1, d_model=512, modifier='', device='cuda', **kwargs):
+        name = f"tdooms/TinyStories-{n_layer}-{d_model}-{modifier}"
         config = Config.from_pretrained(name)
-        return super(Transformer, Transformer).from_pretrained(name, config=config, **kwargs)
+        return super(Transformer, Transformer).from_pretrained(name, config=config, device_map=device, **kwargs)
     
-    def dataset(self, collated=False, split="train"):
-        if not collated:
-            return load_dataset("tdooms/TinyStories", split=split)
+    def dataset(self, collated: bool = False, tokenized: bool = False, split: str|None = None):
+        if collated and not tokenized:
+            raise ValueError("is collated is True, the dataset must be tokenized")
         
-        tokenized = load_dataset("tdooms/TinyStories-tokenized")
-        collated = self.collator(tokenized["input_ids"])
+        # TODO: this only works for the 4096 tokenizer currently
+        if tokenized:
+            dataset = load_dataset("tdooms/TinyStories-tokenized", split=split)
+        else:
+            dataset = load_dataset("tdooms/TinyStories", split=split)
         
-        return collated
+        if collated:
+            return self.collator(dataset["input_ids"])
+        else: 
+            return dataset
     
     def tokenize(self, dataset):
         return self.tokenizer(dataset["text"], truncation=True, padding=True, max_length=256)
@@ -492,22 +527,23 @@ class Transformer(PreTrainedModel):
     def collator(self, **kwargs):
         return DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
     
-    def train_on_tinystories(self):
-        dataset = load_dataset("tdooms/TinyStories")
-        accuracy = evaluate.load("accuracy")
-
-        tokenized_train = dataset["train"].map(self.tokenize, batched=True, remove_columns=dataset["train"].column_names)
-        tokenized_validation = dataset["validation"].map(self.tokenize, batched=True, remove_columns=dataset["validation"].column_names)
+    def fit(self, log=True, lr=1e-3, wd=0.01, batch_size=16, epochs=1, eval_steps=10_000, **kwargs):
+        dataset = self.dataset(tokenized=True)
+        train = dataset["train"]
+        validation = dataset["validation"]
         
         training_args = TrainingArguments(
             # use_cpu=True,
             output_dir="_checkpoints",
-            learning_rate=1e-3,
-            per_device_train_batch_size=16,
-            per_device_eval_batch_size=16,
-            num_train_epochs=1,
-            weight_decay=0.01,
-            report_to="wandb",
+            learning_rate=lr,
+            per_device_train_batch_size=batch_size,
+            per_device_eval_batch_size=batch_size,
+            num_train_epochs=epochs,
+            weight_decay=wd,
+            do_eval=True,
+            evaluation_strategy="steps",
+            eval_steps=eval_steps,
+            report_to="wandb" if log else None,
             remove_unused_columns=False,
             **kwargs
         )
@@ -515,16 +551,15 @@ class Transformer(PreTrainedModel):
         trainer = Trainer(
             model=self,
             args=training_args,
-            train_dataset=tokenized_train,
-            eval_dataset=tokenized_validation,
+            train_dataset=train,
+            eval_dataset=validation,
             tokenizer=self.tokenizer,
             data_collator=self.collator,
-            compute_metrics=accuracy,
         )
         
-        wandb.init(project="stories", config=self.config)
+        if log: wandb.init(project="stories", config=self.config)
         trainer.train()
-        wandb.finish()
+        if log: wandb.finish()
         
         return trainer
 

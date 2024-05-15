@@ -58,3 +58,6 @@ tokenized = dataset.map(model.tokenize, batched=True, remove_columns=dataset.col
 
 # tokenized = tokenized.remove_columns(["token_type_ids", "attention_mask"])
 tokenized.push_to_hub("TinyStories-tokenized")
+
+# %%
+

@@ -32,7 +32,7 @@ We study bilinear layers of the form $(W x + b) \odot (V x + c)$. Adding biases 
 
 We use a 3-layer setup: an embedding, a bilinear layer and an unembedding. We believe this a useful setup to study as this occurs throughout residual models. The following image illustrates the setup and notational convention.
 
-![image](images/bilinear-blocks.png)
+![image](../images/bilinear-blocks.png)
 
 ## Computation
 
@@ -44,7 +44,7 @@ Config(n_epochs=2_000, n_embed=4, n_features=4, n_unembed=6, n_outputs=6, embed=
 
 Training this model yields the following interaction matrix for output feature 0. Note that this model receives binary inputs. Results are shown for sparsity 0.5 (50/50 chance for a feature to be on or off) however results hold for all sparsities not too close to 0 or 1.
 
-![image](images/xor_0.png)
+![image](../images/xor_0.png)
 
 ### Feature Interaction
 
@@ -154,7 +154,7 @@ $f_{01} + f_{10} = (2 + 3) - 2 - 2 + 0 = 1$
 
 We can use these formulae to compute which task the model has learnt. The image below measures the loss of the predicted truth table for each feature (separately) for varying sparsities (the instance rows). This only fails when sparsity is 0 (top row) and these models simply output a constant value.
 
-![image](images/truth_table.png)
+![image](../images/truth_table.png)
 
 ### Multilayer computation
 
@@ -197,8 +197,8 @@ ToyConfig(n_epochs=3000, n_features=4, n_embed=2, n_unembed=4, n_outputs=4)
 
 This yields the following interaction matrix (extracted from UBE), showing that features 0 and 3 are stored in a digon superposition and features 1 and 2 too (not shown).
 
-![image](images/superposition_0.png)
-![image](images/superposition_3.png)
+![image](../images/superposition_0.png)
+![image](../images/superposition_3.png)
 
 The weights are $f_{00} = f_{11} = -f_{01} = -f_{10} = 0.62$ and the biases are $b_0 = -b_1 = 0.5$. To understand exactly why the weights take on these values, we should study the task a bit more formally. For this analysis, we will assume the embedding is antipodal. This means that the hidden dimension will be $\alpha = x - y$. If we wish to reconstruct $x$ from $\alpha$ in a sparse regime, we have to perform.
 
@@ -214,7 +214,7 @@ To achieve this, $f_{11}$ must equal $f_{00}$ and the sum $f_{01} + f_{10}$ must
 
 An interesting way to visualize this approximation is through means of a radial plot.
 
-![radial](images/radial.png)
+![radial](../images/radial.png)
 
 The distance from the centre indicates the value of an output feature, and the angle represents the sampled input feature. We can see that each output feature is maximal along the embedding directions, 0 when orthogonal and makes a close approximation when negative. A ReLU has a similar structure but is exactly 0 between 90 and 270 for the blue line.
 
@@ -249,7 +249,7 @@ The model simply learns the constant 1, this makes sense, as it is the expected 
 
 Again, as the model can assume sparsity, it makes the approximation of $\max(\alpha, 0) - \min(\alpha, 0) = |\alpha|$, the best approximation for this is $1.24 \alpha^2$.
 
-![text](images/radial_sum.png)
+![text](../images/radial_sum.png)
 
 ## Caveat
 
