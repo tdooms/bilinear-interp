@@ -11,7 +11,7 @@ from sae import Config, GatedSAE, Hook
 from datasets import load_dataset
 
 # %%
-model = Transformer.from_pretrained(n_layer=1, d_model=512, modifier="i")
+model = Transformer.from_pretrained(n_layer=1, d_model=1024, modifier="i5")
 lm = LanguageModel(model, tokenizer=model.tokenizer)
 
 # with lm.trace("Some input", scan=False, validate=False):
@@ -27,7 +27,7 @@ lm = LanguageModel(model, tokenizer=model.tokenizer)
 
 
 # f"tdooms/{model.name}-{config.name}"
-sae = GatedSAE.from_pretrained(model, expansion=4, hook=Hook("resid-mid", 0))
+sae = GatedSAE.from_pretrained(model, expansion=6, hook=Hook("resid-mid", 0))
 # state = torch.load(f"saes/{model.name}/{sae.name}.pt")
 # sae.load_state_dict(state)
         
