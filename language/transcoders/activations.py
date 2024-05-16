@@ -11,15 +11,13 @@ from sae import Config, GatedSAE
 from datasets import load_dataset
 
 # %%
-model = Transformer.from_pretrained(n_layer=4, d_model=512, modifier="-gated").cuda()
+model = Transformer.from_pretrained(n_layer=4, d_model=512, modifier="i")
 lm = LanguageModel(model, tokenizer=model.tokenizer)
-tokenizer = model.tokenizer
 
-dataset = load_dataset("tdooms/TinyStories", split="train[:128]")
+dataset = model.dataset(tokenized=True, split="train[:128]")
 
-layer = 1
-config = Config(buffer_size=2**18, sparsities=(0.5, 1))
-sae = GatedSAE.from_pretrained(f"saes/stories-4-512-gated/mlp-in-{layer}-4x.pt", config=config, model=lm).cuda()
+config = Config(expansion=4)
+sae = GatedSAE.from_pretrained("saes/stories-1-512-i/resid-mid-0-8x.pt", config=config, model=model)
 
 # %%
 prompt = dataset[27]["text"]

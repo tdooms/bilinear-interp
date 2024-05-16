@@ -1,72 +1,99 @@
-from torch import nn
 import torch
-from transformer_lens import utils
-from dataclasses import dataclass
 from einops import *
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LambdaLR
 import wandb
 from tqdm import tqdm
 from collections import namedtuple
-from typing import Callable, Any
-import time
+from transformers import PreTrainedModel, PretrainedConfig
 
 Loss = namedtuple('Loss', ['reconstruction', 'sparsity', 'auxiliary'])
+Hook = namedtuple('Hook', ['point', 'layer'])
 
+class Config(PretrainedConfig):
+    def __init__(
+        self,
+        hook: Hook | None = None,
+        n_ctx: int = 256,
+        d_model: int | None = None,
+        expansion: int = 4,
+        sparsities: tuple = (0.1, 0.25, 0.5, 1),
+        buffer_size: int = 2**18,  # ~250k tokens
+        n_buffers: int = 100,      # ~25M tokens
+        in_batch: int = 32,
+        out_batch: int = 4096,
+        lr: float = 1e-4,
+        validation_interval: int = 1000,
+        not_active_thresh: int = 2,
+        device: str = "cuda",
+        normalize: bool = False,
+        modifier: str | None = None,
+        **kwargs
+    ):
+        self.hook = hook
+        
+        self.n_ctx = n_ctx
+        self.d_model = d_model
+        self.expansion = expansion
+        self.sparsities = sparsities
+        
+        self.buffer_size = buffer_size
+        self.n_buffers = n_buffers
+        
+        self.in_batch = in_batch
+        self.out_batch = out_batch
+        self.lr = lr
+        
+        self.validation_interval = validation_interval
+        self.not_active_thresh = not_active_thresh
+        
+        self.device = device
+        self.normalize = normalize
+        
+        self.modifier = modifier
+        
+        # self.module = {
+        #     "resid-mid": lambda lm: lm.transformer.h[self.hook.layer].n2.input[0][0],
+        #     "mlp-out": lambda lm: lm.transformer.h[self.hook.layer].mlp.output,
+        # }[self.hook.point]
+        
+        super().__init__(**kwargs)
 
-@dataclass
-class Config:
-    # transcoder: TranscoderConfig | None = None
-    module: Callable[[Any], Any] | None = None
-    
-    buffer_size: int = 2**18  # ~250k tokens
-    n_buffers: int = 100      # ~25M tokens
-
-    in_batch: int = 32
-    out_batch: int = 4096
-
-    expansion: int = 4
-    lr: float = 1e-4
-    
-    validation_interval: int = 1000
-    not_active_thresh: int = 2
-
-    sparsities: tuple = (0.1, 0.25, 0.5, 1)
-    device: str = "cuda"
-    
-    normalize: bool = False
-
-class BaseSAE(nn.Module):
+class BaseSAE(PreTrainedModel):
     """
     Base class for all Sparse Auto Encoders.
     Provides a common interface for training and evaluation.
     """
-    def __init__(self, config, model) -> None:
-        super().__init__()
+    def __init__(self, config) -> None:
+        super().__init__(config)
         self.config = config
         
-        self.d_model = model.config.d_model
-        self.d_hidden = self.config.expansion * self.d_model
+        self.d_model = config.d_model
+        self.d_hidden = config.expansion * self.d_model
         
-        self.n_ctx = model.config.n_ctx
+        self.n_ctx = config.n_ctx
         self.n_instances = len(config.sparsities)
         
         self.steps_not_active = torch.zeros(self.n_instances, self.d_hidden)
         self.sparsities = torch.tensor(config.sparsities).to(config.device)
         self.step = 0
     
+
+    
     def preprocess(self, x):
         ctx = dict()
         if self.config.normalize:
             ctx["norm"] = x.norm(dim=-1, keepdim=True)
             x = x / ctx["norm"]
-        return x
+        return x, ctx
     
     def postprocess(self, x, **kwargs):
         if self.config.normalize:
-            x = x * kwargs["norm"]
+            x = x * kwargs["norm"][..., None, :]
         return x
         
+    def expand(self, x):
+        return repeat(x, "... d -> ... inst d", inst=self.n_instances)
         
     def decode(self, x):
         return x
@@ -81,15 +108,13 @@ class BaseSAE(nn.Module):
     def loss(self, x, x_hid, x_hat, steps, *args):
         pass
     
-    @classmethod
-    def from_pretrained(cls, path, *args, **kwargs):
-        state = torch.load(path)
-        new = cls(*args, **kwargs)
-        new.load_state_dict(state)
-        return new
-    
-    def save(self, path):
-        torch.save(self.state_dict(), path)
+    # Unclear why I can't get this work
+    # @classmethod
+    # def from_pretrained(cls, model, expansion, hook, device="cuda", **kwargs):
+    #     pre = Config(expansion=expansion, d_model=model.config.d_model, hook=hook)
+    #     path = f"tdooms/{model.name}-{pre.name}"
+    #     config = Config.from_pretrained(path)
+    #     return super(Bas, BaseSAE).from_pretrained(path, config=config, device_map=device, **kwargs)
     
     def calculate_metrics(self, x_hid, losses, *args):
         activeness = x_hid.sum(0)
@@ -111,7 +136,7 @@ class BaseSAE(nn.Module):
         
         return metrics
     
-    def train(self, sampler, model, validation, log=True):
+    def fit(self, sampler, model, validation, log=True):
         if log: wandb.init(project="sae")
         
         self.step = 0
@@ -125,7 +150,7 @@ class BaseSAE(nn.Module):
             for x in loader:
                 x, ctx = self.preprocess(x)
                 
-                x = repeat(x, "... d -> ... inst d", inst=self.n_instances).detach()
+                x = self.expand(x).detach()
                 x_hid, *rest = self.encode(x)
                 x_hat = self.decode(x_hid)
                 
@@ -160,7 +185,8 @@ class BaseSAE(nn.Module):
             baseline = lm.output.loss.save()
         
         x, ctx = self.preprocess(acts.value)
-        x = repeat(x, "... d -> ... inst d", inst=self.n_instances)
+        x = self.expand(x).detach()
+        
         x_hat = self.forward(x)
         x_hat = self.postprocess(x_hat, **ctx)
 

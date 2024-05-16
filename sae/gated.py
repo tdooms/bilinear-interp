@@ -3,22 +3,22 @@ from torch import nn
 from einops import *
 
 from sae.utils import ConstrainedAdam
-from sae.base import BaseSAE, Loss
+from sae.base import BaseSAE, Loss, Config
 
 class GatedSAE(BaseSAE):
     """
     A basic gated SAE implementation (no resampling).
     https://arxiv.org/abs/2404.16014
     """
-    def __init__(self, config, model):
-        super().__init__(config, model)
+    def __init__(self, config):
+        super().__init__(config)
         device = config.device
 
         W_dec = torch.randn(self.n_instances, self.d_model, self.d_hidden, device=device)
         W_dec /= torch.norm(W_dec, dim=-1, keepdim=True)
         self.W_dec = nn.Parameter(W_dec)
 
-        self.W_gate = nn.Parameter(W_dec.mT.clone().to(device))
+        self.W_gate = nn.Parameter(W_dec.mT.clone().to(device).contiguous())
         self.r_mag = nn.Parameter(torch.zeros(self.n_instances, self.d_hidden, device=device))
 
         self.b_gate = nn.Parameter(torch.zeros(self.n_instances, self.d_hidden, device=device))
@@ -26,7 +26,15 @@ class GatedSAE(BaseSAE):
         self.b_dec = nn.Parameter(torch.zeros(self.n_instances, self.d_model, device=device))
         
         self.optimizer = ConstrainedAdam(self.parameters(), [self.W_dec], lr=config.lr)
-
+        
+    @classmethod
+    def from_pretrained(cls, model, expansion, hook, modifier=None, device="cuda", **kwargs):
+        path = f"tdooms/{model.name}-{hook.point}-{hook.layer}-{expansion}x"
+        path = f"{path}-{modifier}" if modifier is not None else path
+        
+        config = Config.from_pretrained(path)
+        return super(GatedSAE, GatedSAE).from_pretrained(path, config=config, device_map=device, **kwargs)
+    
     def encode(self, x):
         preact = einsum(x, self.W_gate, " ... inst d, inst h d -> ... inst h")
         magnitude = preact * torch.exp(self.r_mag) + self.b_mag

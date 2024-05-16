@@ -149,6 +149,7 @@ class Config(PretrainedConfig):
         normalization: str | None = 'rms',
         norm_bias: bool = False,
         mlp_bias: bool = False,
+        modifier: str | None = None,
         **kwargs
     ):
         self.n_vocab = n_vocab
@@ -168,6 +169,8 @@ class Config(PretrainedConfig):
         
         self.norm_bias = norm_bias
         self.mlp_bias = mlp_bias
+        
+        self.modifier = modifier
         
         super().__init__(**kwargs)
         
@@ -455,6 +458,13 @@ class Transformer(PreTrainedModel):
     @property
     def ube(self):
         return UBE(self)
+    
+    @property
+    def name(self):
+        if self.config.modifier is None:
+            return f"TinyStories-{self.config.n_layer}-{self.config.d_model}"
+        else:
+            return f"TinyStories-{self.config.n_layer}-{self.config.d_model}-{self.config.modifier}"
     
     def summary(self) -> pd.DataFrame:
         """Summarizes the model's architecture and parameter count into a dataframe.

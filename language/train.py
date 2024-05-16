@@ -11,19 +11,19 @@ model = Transformer.from_config(n_layer=1, d_model=1024, mlp="blp", d_hidden=102
 model.summary()
 # %%
 
-model.fit(log=True, epochs=5, wd=0.1)
+model.fit(log=True, epochs=5, wd=0.1, batch_size=128)
 
 # %%
 
-model.push_to_hub(f"TinyStories-1-1024-i")
+model.push_to_hub(f"TinyStories-1-1024-i5")
 
 # %%
 
-model.generate("Once upon a time, John and Max were playing.", max_length=100)
+model.generate("Once upon a time, ", max_length=100)
 
 # %%
 
-t = Transformer.from_pretrained(n_layer=1, d_model=1024, modifier='i')
+# t = Transformer.from_pretrained(n_layer=1, d_model=1024, modifier='i')
 # dataset = model.dataset(tokenized=True)
 # train = dataset["train"]
 # validation = dataset["validation"]
