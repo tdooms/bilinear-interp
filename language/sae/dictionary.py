@@ -5,17 +5,17 @@
 import torch
 from language import Transformer
 from nnsight import LanguageModel
-from sae import GatedSAE, Config
+from sae import GatedSAE, Hook, Config
 import plotly.express as px
 
 torch.set_grad_enabled(False)
-model = Transformer.from_pretrained(n_layer=1, d_model=512, modifier="i")
+
+model = Transformer.from_pretrained(n_layer=1, d_model=1024, modifier="i5")
 lm = LanguageModel(model, tokenizer=model.tokenizer)
 
 vocab = model.vocab
+sae = GatedSAE.from_pretrained(model, expansion=6, hook=Hook("resid-mid", 0))
 
-config = Config(expansion=8)
-sae = GatedSAE.from_pretrained("saes/stories-1-512-i/resid_mid-0-8x.pt", config=config, model=model)
 
 # %%
 
@@ -41,3 +41,4 @@ x_mid.shape
 # px.line(x_mid[:, 0][vocab['a']].cpu().sort().values)
 
 values, indices = x_mid[:, 0].topk(5, dim=-1)
+indices[150:170]

@@ -30,7 +30,7 @@ class Config(PretrainedConfig):
         modifier: str | None = None,
         **kwargs
     ):
-        self.hook = hook
+        self.hook = Hook(*hook) if isinstance(hook, list) else hook
         
         self.n_ctx = n_ctx
         self.d_model = d_model
@@ -52,12 +52,14 @@ class Config(PretrainedConfig):
         
         self.modifier = modifier
         
-        # self.module = {
-        #     "resid-mid": lambda lm: lm.transformer.h[self.hook.layer].n2.input[0][0],
-        #     "mlp-out": lambda lm: lm.transformer.h[self.hook.layer].mlp.output,
-        # }[self.hook.point]
-        
         super().__init__(**kwargs)
+    
+    @property
+    def module(self):
+        self.module = {
+            "resid-mid": lambda lm: lm.transformer.h[self.hook.layer].n2.input[0][0],
+            "mlp-out": lambda lm: lm.transformer.h[self.hook.layer].mlp.output,
+        }[self.hook.point]
 
 class BaseSAE(PreTrainedModel):
     """
