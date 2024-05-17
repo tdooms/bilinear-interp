@@ -10,12 +10,16 @@ class MnistConfig:
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         self.input_size = 784
-        self.hidden_sizes = [3_000]
+        self.n_layer = 1
+        self.d_hidden = 300
         self.num_classes = 10
-        self.activation_type = 'bilinear'
+        self.activation = 'bilinear'
+        self.embed = True
         self.random_seed = 0
         self.rms_norm = False
         self.bias = False
+        self.noise_sparse = 0
+        self.noise_dense = 0
     
         # training params
         self.num_epochs = 10
@@ -26,60 +30,50 @@ class MnistConfig:
 
         self.__dict__.update(kwargs)
 
-class Relu(nn.Module):
-    def __init__(self, input_size, output_size, norm):
-        super(Relu, self).__init__()
-        self.linear = nn.Linear(input_size, output_size)
-        self.act = nn.ReLU()
 
-        self.norm = norm
-        if norm:
-          self.rms_norm = RmsNorm()
+class Relu(nn.Module):
+    def __init__(self, cfg):
+        super(Relu, self).__init__()
+        self.cfg = cfg
+
+        self.linear = nn.Linear(cfg.d_hidden, cfg.d_hidden)
+        self.act = nn.ReLU()
+        self.rms_norm = RmsNorm(cfg)
     
     def forward(self, x):
         out = self.linear(x)
         self.out_prenorm = self.act(out)
-        if self.norm:
-          self.out = self.rms_norm(self.out_prenorm)
-        else:
-          self.out = self.out_prenorm
+        self.out = self.rms_norm(self.out_prenorm)
         return self.out
 
 class Bilinear(nn.Module):
-    def __init__(self, input_size, output_size, norm, bias = False):
+    def __init__(self, cfg):
         super(Bilinear, self).__init__()
-        self.bias = bias
-        if bias:
-            input_size = input_size + 1
-        self.linear1 = nn.Linear(input_size, output_size, bias = False)
-        self.linear2 = nn.Linear(input_size, output_size, bias = False)
-        
-        self.norm = norm
-        if norm:
-          self.rms_norm = RmsNorm()
+        self.cfg = cfg
+
+        self.linear1 = nn.Linear(cfg.d_hidden, cfg.d_hidden, bias = cfg.bias)
+        self.linear2 = nn.Linear(cfg.d_hidden, cfg.d_hidden, bias = cfg.bias)
+        self.rms_norm = RmsNorm(cfg)
         
     def forward(self, x):
-        if self.bias:
-            ones =  torch.ones(x.size(0), 1).to(x.device)
-            self.input = torch.cat((x, ones), dim=-1)
-        else:
-            self.input = x
+        self.input = x
         out1 = self.linear1(self.input)
         out2 = self.linear2(self.input)
         self.out_prenorm = out1 * out2
-        if self.norm:
-          self.out = self.rms_norm(self.out_prenorm)
-        else:
-          self.out = self.out_prenorm
+        self.out = self.rms_norm(self.out_prenorm)
         return self.out
 
 class RmsNorm(nn.Module):
-    def __init__(self):
+    def __init__(self, cfg):
         super(RmsNorm, self).__init__()
+        self.cfg = cfg
       
     def forward(self, x):
-        self.rms_scale = torch.sqrt((x**2).sum(dim=-1, keepdim=True))
-        self.out = x/self.rms_scale
+        if self.cfg.rms_norm:
+            self.rms_scale = torch.sqrt((x**2).sum(dim=-1, keepdim=True))
+            self.out = x/self.rms_scale
+        else:
+            self.out = x
         return self.out
 
 class MnistModel(nn.Module):
@@ -91,27 +85,29 @@ class MnistModel(nn.Module):
         if cfg.random_seed is not None:
             torch.manual_seed(cfg.random_seed)
 
-        if cfg.rms_norm:
-          self.input_norm = RmsNorm()
+        self.input_norm = RmsNorm(cfg)
+        if cfg.embed:
+            self.linear_in = nn.Linear(cfg.input_size, cfg.d_hidden).to(cfg.device)
 
         layers = []
-        input_size = cfg.input_size
-        for idx, hidden_size in enumerate(cfg.hidden_sizes):
-          if self.cfg.activation_type == 'relu':
-            layers.append(Relu(input_size, hidden_size, cfg.rms_norm).to(cfg.device))
-          elif self.cfg.activation_type == 'bilinear':
-            layers.append(Bilinear(input_size, hidden_size, cfg.rms_norm, cfg.bias).to(cfg.device))
-          input_size = hidden_size
+        for idx in range(cfg.n_layers):
+            if cfg.activation == 'bilinear':
+                mlp = Bilinear(cfg)
+            elif cfg.activation == 'relu':
+                mlp = Relu(cfg)
+            layers.append(mlp.to(cfg.device))
 
         self.layers = nn.ModuleList(layers)
-        self.linear_out = nn.Linear(input_size, cfg.num_classes).to(cfg.device)
+        self.linear_out = nn.Linear(cfg.d_hidden, cfg.num_classes).to(cfg.device)
 
     def forward(self, x):
         self.input_prenorm = x
-        if self.cfg.rms_norm:
-            x = self.input_norm(x)
+        x = self.input_norm(x)
         self.input = x
 
+        if self.cfg.embed:
+            x = self.linear_in(x)
+            
         for layer in self.layers:
             x = layer(x)
         self.out = self.linear_out(x)
@@ -154,6 +150,12 @@ class MnistModel(nn.Module):
                 # resized: [100, 784]
                 images = images.reshape(-1, 28*28).to(self.cfg.device)
                 labels = labels.to(self.cfg.device)
+
+                #input noise
+                noise_mask = torch.bernoulli(self.cfg.noise_sparse * torch.ones_like(images)).bool()
+                images[noise_mask] = 1 - images[noise_mask]
+                images += self.cfg.noise_dense * torch.randn_like(images)
+                
 
                 # Forward pass
                 outputs = self.forward(images)
