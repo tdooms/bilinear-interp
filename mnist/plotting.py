@@ -16,11 +16,12 @@ def create_Q_from_upper_tri_idxs(Q_vec, idxs):
 
 class EigenvectorPlotter():
     # Eigenvector Plotter for image-based datasets
-    def __init__(self, B, logits, dataset = None, img_size=(28,28)):
+    def __init__(self, B, logits, dataset = None, img_size=(28,28), Embed = None):
         self.B = B      #[component, in1, in2]
         self.logits = logits    #[component, out]
         self.dataset = dataset
         self.img_size = img_size
+        self.Embed = Embed #[hidden, input]
 
     def plot_component(self, component, suptitle=None, topk_eigs = 3, sort='eigs', 
         vmax=None, classes = None, **kwargs):
@@ -28,6 +29,8 @@ class EigenvectorPlotter():
         Q = self.B[component]
         
         eigvals, eigvecs = torch.linalg.eigh(Q)
+        if self.Embed is not None:
+            eigvecs = self.Embed.T @ eigvecs
         eigvals_orig = eigvals.clone()
 
         if self.dataset is not None:
@@ -165,7 +168,7 @@ class EigenvectorPlotter():
             sort_idxs = mean_acts.argsort()
         else:
             sort_idxs = eigvals.argsort()
-        eigvecs = eigvecs[sort_idxs]
+        eigvecs = eigvecs[:,sort_idxs]
         eigvals = eigvals[sort_idxs]
         mean_acts = mean_acts[sort_idxs]
 
