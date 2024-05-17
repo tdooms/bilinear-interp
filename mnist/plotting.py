@@ -98,7 +98,8 @@ class EigenvectorPlotter():
                                             )
         
         ax = row_subfigs[0].add_subplot(111)
-        self.plot_logits(ax, component, classes)
+        self.plot_eigvals(ax, eigvals_orig)
+        
         
         for i, subfig in enumerate(row_subfigs[1:]):
             colorbar = True if i == topk_eigs-1 else False
@@ -115,7 +116,7 @@ class EigenvectorPlotter():
         
         
         ax = row_subfigs[0].add_subplot(111)
-        self.plot_eigvals(ax, eigvals_orig)
+        self.plot_logits(ax, component, classes)
         
         for i, subfig in enumerate(row_subfigs[1:]):
             colorbar = True if i == topk_eigs-1 else False
