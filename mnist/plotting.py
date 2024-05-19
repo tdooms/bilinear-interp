@@ -24,7 +24,7 @@ class EigenvectorPlotter():
         self.Embed = Embed #[hidden, input]
 
     def plot_component(self, component, suptitle=None, topk_eigs = 3, sort='eigs', 
-        vmax=None, classes = None, **kwargs):
+        vmax=None, classes = None, filename=None, **kwargs):
         device = self.B.device
         Q = self.B[component]
         
@@ -125,6 +125,8 @@ class EigenvectorPlotter():
             self.plot_eigenvector(subfig, images[j], top_imgs[:,j], top_acts[:,j], colorbar, vmax, title=title, **kwargs)
 
         subfigs[0].text(0.05,0.99,f"{suptitle}", va="center", ha="left", size=27)
+        if filename is not None:
+            fig.savefig(filename, bbox_inches='tight')
         plt.show()
 
     @staticmethod
