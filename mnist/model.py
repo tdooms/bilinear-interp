@@ -20,6 +20,7 @@ class MnistConfig:
         self.bias = False
         self.noise_sparse = 0
         self.noise_dense = 0
+        self.layer_noise = 0
     
         # training params
         self.num_epochs = 10
@@ -100,7 +101,7 @@ class MnistModel(nn.Module):
         self.layers = nn.ModuleList(layers)
         self.linear_out = nn.Linear(cfg.d_hidden, cfg.num_classes).to(cfg.device)
 
-    def forward(self, x):
+    def forward(self, x, inference=False):
         self.input_prenorm = x
         x = self.input_norm(x)
         self.input = x
@@ -110,6 +111,9 @@ class MnistModel(nn.Module):
             
         for layer in self.layers:
             x = layer(x)
+            if (not inference):
+                x = x+ self.cfg.layer_noise * x.std() * torch.randn_like(x)
+
         self.out = self.linear_out(x)
         return self.out
 
@@ -124,7 +128,7 @@ class MnistModel(nn.Module):
             for images, labels in test_loader:
                 images = images.reshape(-1, 28*28).to(self.cfg.device)
                 labels = labels.to(self.cfg.device)
-                outputs = self.forward(images)
+                outputs = self.forward(images, inference=True)
                 # max returns (value ,index)
                 _, predicted = torch.max(outputs.data, 1)
                 n_samples += labels.size(0)
