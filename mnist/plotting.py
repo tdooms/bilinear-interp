@@ -49,8 +49,9 @@ class EigenvectorPlotter():
 
         #get top input activations & define mosaic
         if self.dataset is not None:
-            top_imgs, top_acts = self.get_top_act_images(eigvecs, eigvals, self.dataset, k=4)
-            
+            top_imgs, top_acts, top_sims = self.get_top_act_images(eigvecs, eigvals, self.dataset, k=3)
+            plot_signs = self.fix_eig_signs(top_sims, eigvecs)
+
             mosaics = []
 
             mosaic = []
@@ -80,6 +81,7 @@ class EigenvectorPlotter():
             mosaics.append(mosaic_line)
 
             widths = [1.05] + topk_eigs*[1]
+            plot_signs = [1] * len(eigvecs.shape[1])
 
         #subplots
         h = 4
@@ -104,7 +106,7 @@ class EigenvectorPlotter():
         for i, subfig in enumerate(row_subfigs[1:]):
             colorbar = True if i == topk_eigs-1 else False
             title = title_fn(eigvals[i], mean_acts[i])
-            self.plot_eigenvector(subfig, images[i], top_imgs[:,i], top_acts[:,i], colorbar, vmax, title=title, **kwargs)
+            self.plot_eigenvector(subfig, images[i] * plot_signs[i], top_imgs[:,i], top_acts[:,i], colorbar, vmax, title=title, **kwargs)
 
         #second row
         subfigs[1].suptitle('Negative Eigenvectors', fontsize=21)
@@ -122,7 +124,7 @@ class EigenvectorPlotter():
             colorbar = True if i == topk_eigs-1 else False
             j = topk_eigs + i
             title = title_fn(eigvals[j], mean_acts[j])
-            self.plot_eigenvector(subfig, images[j], top_imgs[:,j], top_acts[:,j], colorbar, vmax, title=title, **kwargs)
+            self.plot_eigenvector(subfig, images[j] * plot_signs[j], top_imgs[:,j], top_acts[:,j], colorbar, vmax, title=title, **kwargs)
 
         subfigs[0].text(0.05,0.99,f"{suptitle}", va="center", ha="left", size=27)
         if filename is not None:
@@ -147,7 +149,12 @@ class EigenvectorPlotter():
         eig_idxs = torch.arange(eigvecs.shape[1]).repeat(k,1)
         top_acts = acts[topk_idxs, eig_idxs]
         top_imgs = images[topk_idxs]
-        return top_imgs, top_acts
+        top_sims = sims[topk_idxs, eig_idxs]
+        return top_imgs, top_acts, top_sims
+
+    def fix_eig_signs(self, top_sims, eigvecs):
+        signs = top_sims.mean(dim=0).sign()
+        return signs
 
     def get_title_fn(self, sort):
         if self.dataset is not None:
@@ -165,7 +172,7 @@ class EigenvectorPlotter():
         else:
             signs = eigvecs.sum(dim=0).sign()
         eigvecs = eigvecs * signs.unsqueeze(0)
-        
+
         #sort
         if (self.dataset is not None) and (sort=='activations'):
             sort_idxs = mean_acts.argsort()
@@ -181,7 +188,10 @@ class EigenvectorPlotter():
         eigvals = eigvals[eig_indices]
         eigvecs = eigvecs[:,eig_indices]
         mean_acts = mean_acts[eig_indices]
+
         return eigvecs, eigvals, mean_acts
+
+    
 
     def plot_logits(self, ax, component, classes):
         logits = self.logits[component]
@@ -217,7 +227,7 @@ class EigenvectorPlotter():
 
         ax = subfigs[0].add_subplot(111)
         if 'cmap' not in kwargs:
-            kwargs['cmap'] = 'RdBu_r'
+            kwargs['cmap'] = 'RdBu'
         if 'norm' in kwargs:
             im = ax.imshow(image.reshape(*self.img_size).cpu().detach(), **kwargs)
         else:
