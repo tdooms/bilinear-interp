@@ -24,7 +24,7 @@ class EigenvectorPlotter():
         self.Embed = Embed #[hidden, input]
 
     def plot_component(self, component, suptitle=None, topk_eigs = 3, sort='eigs', 
-        vmax=None, classes = None, filename=None, **kwargs):
+        vmax=None, classes = None, filename=None, input_img_labels = False, **kwargs):
         device = self.B.device
         Q = self.B[component]
         
@@ -106,7 +106,9 @@ class EigenvectorPlotter():
         for i, subfig in enumerate(row_subfigs[1:]):
             colorbar = True if i == topk_eigs-1 else False
             title = title_fn(eigvals[i], mean_acts[i])
-            self.plot_eigenvector(subfig, images[i] * plot_signs[i], top_imgs[:,i], top_acts[:,i], colorbar, vmax, title=title, **kwargs)
+            self.plot_eigenvector(subfig, images[i] * plot_signs[i], top_imgs[:,i], 
+            top_acts[:,i], colorbar, vmax, title=title, 
+            input_img_labels = input_img_labels, **kwargs)
 
         #second row
         subfigs[1].suptitle('Negative Eigenvectors', fontsize=21)
@@ -124,7 +126,9 @@ class EigenvectorPlotter():
             colorbar = True if i == topk_eigs-1 else False
             j = topk_eigs + i
             title = title_fn(eigvals[j], mean_acts[j])
-            self.plot_eigenvector(subfig, images[j] * plot_signs[j], top_imgs[:,j], top_acts[:,j], colorbar, vmax, title=title, **kwargs)
+            self.plot_eigenvector(subfig, images[j] * plot_signs[j], top_imgs[:,j], 
+            top_acts[:,j], colorbar, vmax, title=title, 
+            input_img_labels = input_img_labels, **kwargs)
 
         subfigs[0].text(0.05,0.99,f"{suptitle}", va="center", ha="left", size=27)
         if filename is not None:
@@ -220,7 +224,7 @@ class EigenvectorPlotter():
         ax.set_ylabel('Eigenvalues', fontsize=18)
         # ax.set_xlabel('Index', fontsize=18)
 
-    def plot_eigenvector(self, fig, image, top_imgs, top_acts, colorbar, vmax, title=None, **kwargs):  
+    def plot_eigenvector(self, fig, image, top_imgs, top_acts, colorbar, vmax, title=None, input_img_labels=False, **kwargs):  
         subfigs = fig.subfigures(1,2, width_ratios=[1, 0.18], wspace=0)
         if title:
             fig.suptitle(title, fontsize=18)
@@ -242,11 +246,13 @@ class EigenvectorPlotter():
 
         axs = subfigs[1].subplots(3,1)
         for i, ax in enumerate(axs):
-            self.plot_input_image(ax, top_imgs[i], top_acts[i])
+            self.plot_input_image(ax, top_imgs[i], top_acts[i], 
+            input_img_labels = input_img_labels)
 
-    def plot_input_image(self, ax, img, act):
+    def plot_input_image(self, ax, img, act, input_img_labels = False):
         ax.imshow(img.reshape(*self.img_size), cmap='Greys', vmin=0, vmax=1)
-        ax.set_title(f'act={act:.1f}')
+        if input_img_labels:
+            ax.set_title(f'act={act:.1f}')
         ax.set_xticks([])
         ax.set_yticks([])
 
