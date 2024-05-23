@@ -21,6 +21,7 @@ class MnistConfig:
         self.noise_sparse = 0
         self.noise_dense = 0
         self.layer_noise = 0
+        self.logit_bias = True
     
         # training params
         self.num_epochs = 10
@@ -99,7 +100,7 @@ class MnistModel(nn.Module):
             layers.append(mlp.to(cfg.device))
 
         self.layers = nn.ModuleList(layers)
-        self.linear_out = nn.Linear(cfg.d_hidden, cfg.num_classes).to(cfg.device)
+        self.linear_out = nn.Linear(cfg.d_hidden, cfg.num_classes, bias=cfg.logit_bias).to(cfg.device)
 
     def forward(self, x, inference=False):
         self.input_prenorm = x
