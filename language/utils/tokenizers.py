@@ -4,32 +4,32 @@ from tokenizers.trainers import WordPieceTrainer
 from tokenizers.pre_tokenizers import Whitespace, Digits, Punctuation
 from tokenizers.normalizers import NFD, StripAccents, Lowercase
 from tokenizers.processors import TemplateProcessing
+from transformers import AutoTokenizer
 
 from datasets import load_dataset, Dataset, DatasetDict
+import random
 
 
 def clean_dataset():
-    # Load the original dataset
     dataset = load_dataset("roneneldan/TinyStories")
 
-    # Split into two
-    train_dataset = dataset["train"]
-    validation_dataset = dataset["validation"]
+    full = dataset["validation"]["text"] + dataset["train"]["text"]
 
-    # Filter both datasets for non-ascii characters
-    train_filtered = [s.encode('ascii', 'ignore').decode('ascii') for s in train_dataset["text"]]
-    validation_filtered = [s.encode('ascii', 'ignore').decode('ascii') for s in validation_dataset["text"]]
+    cleaned = [s.encode('ascii', 'ignore').decode('ascii') for s in full]
+    deduped = list(set(cleaned))
+    random.shuffle(deduped)
 
-    # Recreate the datasets
-    train_new = Dataset.from_dict(dict(text=train_filtered))
-    validation_new = Dataset.from_dict(dict(text=validation_filtered))
+    train, validation = deduped[2**14:], deduped[:2**14]
 
-    # Push the cleaned datasets to the hub
-    DatasetDict({"train": train_new, "validation": validation_new}).push_to_hub("TinyStories")
+    train_ds= Dataset.from_dict(dict(text=train))
+    validation_ds = Dataset.from_dict(dict(text=validation))
+
+    return DatasetDict({"train": train_ds, "validation": validation_ds})
 
 
 def train_tokenizer(vocab_size=4096):
-    dataset = load_dataset("tdooms/TinyStories", split="train")
+    dataset = load_dataset("tdooms/TinyStories")
+    full = dataset["validation"]["text"] + dataset["train"]["text"]
 
     # Normalize the input as much as possible
     normalizer = normalizers.Sequence([NFD(), StripAccents(), Lowercase()])
@@ -48,21 +48,21 @@ def train_tokenizer(vocab_size=4096):
 
     # Train the tokenizer
     trainer = WordPieceTrainer(vocab_size=vocab_size, special_tokens=["[UNK]", "[BOS]", "[EOS]"])
-    tokenizer.train_from_iterator(dataset["text"], trainer=trainer)
+    tokenizer.train_from_iterator(full, trainer=trainer)
     tokenizer.save(f"stories-{vocab_size}.json")
+
+
+def tokenize_dataset(vocab_size=4096):
+    dataset = load_dataset("tdooms/TinyStories")
+    validation, train = dataset["validation"], dataset["train"]
     
-
-def dedup_dataset():
-    # TODO: Implement this function
-    raise NotImplementedError("This function is not yet implemented")
-    # dataset = load_dataset("roneneldan/TinyStories", split="train")
-
-    # filtered = {idx: text for idx, text in enumerate(dataset["text"]) if "Anything" in text}
-    # print(dataset['text'][241240] == dataset['text'][1633001])
-    # deduped = set(dataset["text"])
-    # print(len(dataset["text"]), len(deduped))
-    # val = load_dataset("roneneldan/TinyStories", split="validation")
-    # vduped = set(val["text"])
-
-    # tot = deduped.union(vduped)
-    # print(len(tot), len(deduped) + len(vduped))
+    tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{vocab_size}-uncased", pad_token="[EOS]")
+    tokenize = lambda ds: tokenizer(ds["text"], truncation=True, padding=True, max_length=256)
+    
+    val_toks = validation.map(tokenize, batched=True, remove_columns=validation.column_names)
+    train_toks = train.map(tokenize, batched=True, remove_columns=train.column_names)
+    
+    val_toks = val_toks.remove_columns(["token_type_ids", "attention_mask"])
+    train_toks = train_toks.remove_columns(["token_type_ids", "attention_mask"])
+    
+    return DatasetDict(dict(train=train_toks, validation=val_toks))

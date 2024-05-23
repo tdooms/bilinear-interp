@@ -20,31 +20,24 @@ class UBE:
     def __init__(self, inner) -> None:
         self.inner = inner
     
-    def diagonal(self, residual=False):
+    def diagonal(self, residual=False, layer=0):
         inner = self.inner
         
-        diag = einsum(
-            inner.w_e, inner.w_e, inner.w_l, inner.w_r, inner.w_p, inner.w_u,
-            "emb1 i, emb2 i, ... hid emb1, ... hid emb2, ... res hid, out res -> ... out i"
-        )
-        
+        diag = einsum(inner.b[layer], inner.w_e, inner.w_u, "res emb emb, emb in, out res -> out in")
+            
         if residual:
-            diag += einsum(inner.w_e, inner.w_u, "res i, out res -> out i")
+            diag += einsum(inner.w_e, inner.w_u, "res in, out res -> out in")
         
         return diag
     
-    def interaction(self, idx, residual=False, symmetric=True):
+    def interaction(self, idx, residual=False, layer=0):
         inner = self.inner
         
         inter = einsum(
-            inner.w_e, inner.w_e, inner.w_l, inner.w_r, inner.w_p, inner.w_u[idx],
-            "emb1 in1, emb2 in2, ... hid emb1, ... hid emb2, ... res hid, res -> ... in1 in2"
+            inner.w_e, inner.w_e, inner.b[layer], inner.w_u[idx],
+            "emb1 in1, emb2 in2, out emb1 emb2, out -> in1 in2"
         )
         
-        if symmetric:
-            inter = 0.5 * (inter + inter.mT)
-        
-        # TODO: check the correctness of this residual term
         if residual:
             inter += einsum(inner.w_e, inner.w_e, inner.w_u[idx], "res in1, res in2, res -> in1 in2")
         
@@ -150,6 +143,7 @@ class Config(PretrainedConfig):
         norm_bias: bool = False,
         mlp_bias: bool = False,
         modifier: str | None = None,
+        noise: float | None = None,
         **kwargs
     ):
         self.n_vocab = n_vocab
@@ -169,6 +163,8 @@ class Config(PretrainedConfig):
         
         self.norm_bias = norm_bias
         self.mlp_bias = mlp_bias
+        
+        self.noise = noise
         
         self.modifier = modifier
         
@@ -215,7 +211,6 @@ class Rotary(torch.nn.Module):
         
         return apply_rotary_pos_emb(q, k, self.cos_cached, self.sin_cached)
     
-
 
 class Attention(nn.Module):
     def __init__(self, config: Config) -> None:
@@ -283,6 +278,18 @@ class GLP(nn.Module):
         return self.drop(self.o(self.gelu(left) * right))
 
 
+class Noise(nn.Module):
+    def __init__(self, scale) -> None:
+        super().__init__()
+        self.scale = scale
+    
+    def forward(self, x):
+        if self.training and self.scale is not None:
+            return x + torch.randn_like(x) * self.scale * torch.std(x, dim=-1, keepdim=True)
+        else:
+            return x
+    
+    
 class RMSNorm(nn.Module):
     def __init__(self, dims, bias=False):
         super().__init__()
@@ -294,13 +301,21 @@ class RMSNorm(nn.Module):
         return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.weight + (0 if self.bias is None else self.bias)
 
 
-def normalization(kind: str | None, *args, **kwargs):
-    opts = {
-        'rms': RMSNorm,
-        'ln': nn.LayerNorm,
-        None: nn.Identity
-    }
-    return opts[kind](*args, **kwargs)
+class Norm(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        
+        self.norm = {
+            'rms': RMSNorm,
+            'ln': nn.LayerNorm,
+            None: nn.Identity
+        }[config.normalization](config.d_model, config.norm_bias)
+        
+        self.noise = Noise(config.noise)
+        
+    def forward(self, x):
+        return self.noise(self.norm(x))
+        
 
 class Layer(nn.Module):
     def __init__(self, config: Config) -> None:
@@ -311,8 +326,8 @@ class Layer(nn.Module):
         self.attn = Attention(config)
         self.mlp = mlp_fn[config.mlp](config)
         
-        self.n1 = normalization(config.normalization, config.d_model, config.norm_bias)
-        self.n2 = normalization(config.normalization, config.d_model, config.norm_bias)
+        self.n1 = Norm(config)
+        self.n2 = Norm(config)
     
     def forward(self, x, attention_mask=None):
         x = x + self.attn(self.n1(x), attention_mask)
@@ -330,7 +345,7 @@ class Transformer(PreTrainedModel):
             wte = nn.Embedding(config.n_vocab, config.d_model),
             drop = nn.Dropout(config.embed_dropout),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
-            n_f = normalization(config.normalization, config.d_model, config.norm_bias)
+            n_f = Norm(config)
         ))
         
         self.lm_head = nn.Linear(config.d_model, config.n_vocab, bias=False)
@@ -406,8 +421,13 @@ class Transformer(PreTrainedModel):
         return rearrange(lr, "n_layer (n_proj d_hidden) d_model -> n_proj n_layer d_hidden d_model", n_proj=2)
     
     @property
-    def b(self):
-        b = einsum(self.w_l, self.w_r, self.w_p, "... hid in1, ... hid in2, ... out hid -> ... out in1 in2")
+    def b(self, half=True):
+        if half:
+            w_l, w_r, w_p = self.w_l.detach().half(), self.w_r.detach().half(), self.w_p.detach().half()
+        else:
+            w_l, w_r, w_p = self.w_l.detach(), self.w_r.detach(), self.w_p.detach()
+        
+        b = einsum(w_l, w_r, w_p, "... hid in1, ... hid in2, ... out hid -> ... out in1 in2")
         return 0.5 * (b + b.mT)
     
     @property
@@ -515,13 +535,12 @@ class Transformer(PreTrainedModel):
         config = Config.from_pretrained(name)
         return super(Transformer, Transformer).from_pretrained(name, config=config, device_map=device, **kwargs)
     
-    def dataset(self, collated: bool = False, tokenized: bool = False, split: str|None = None):
+    def dataset(self, collated: bool = False, tokenized: bool = False, split: str | None = None):
         if collated and not tokenized:
             raise ValueError("is collated is True, the dataset must be tokenized")
         
-        # TODO: this only works for the 4096 tokenizer currently
         if tokenized:
-            dataset = load_dataset("tdooms/TinyStories-tokenized", split=split)
+            dataset = load_dataset(f"tdooms/TinyStories-tokenized-{self.config.n_vocab}", split=split)
         else:
             dataset = load_dataset("tdooms/TinyStories", split=split)
         
@@ -539,8 +558,7 @@ class Transformer(PreTrainedModel):
     
     def fit(self, log=True, lr=1e-3, wd=0.01, batch_size=16, epochs=1, eval_steps=10_000, **kwargs):
         dataset = self.dataset(tokenized=True)
-        train = dataset["train"]
-        validation = dataset["validation"]
+        train, validation = dataset["train"], dataset["validation"]
         
         training_args = TrainingArguments(
             # use_cpu=True,
