@@ -88,7 +88,7 @@ class MnistModel(nn.Module):
 
         self.input_norm = RmsNorm(cfg)
         if cfg.embed:
-            self.linear_in = nn.Linear(cfg.input_size, cfg.d_hidden).to(cfg.device)
+            self.linear_in = nn.Linear(cfg.input_size, cfg.d_hidden, bias=False).to(cfg.device)
 
         layers = []
         for idx in range(cfg.n_layers):
