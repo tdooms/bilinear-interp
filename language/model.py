@@ -421,12 +421,8 @@ class Transformer(PreTrainedModel):
         return rearrange(lr, "n_layer (n_proj d_hidden) d_model -> n_proj n_layer d_hidden d_model", n_proj=2)
     
     @property
-    def b(self, half=True):
-        if half:
-            w_l, w_r, w_p = self.w_l.detach().half(), self.w_r.detach().half(), self.w_p.detach().half()
-        else:
-            w_l, w_r, w_p = self.w_l.detach(), self.w_r.detach(), self.w_p.detach()
-        
+    def b(self):
+        w_l, w_r, w_p = self.w_l.detach(), self.w_r.detach(), self.w_p.detach()
         b = einsum(w_l, w_r, w_p, "... hid in1, ... hid in2, ... out hid -> ... out in1 in2")
         return 0.5 * (b + b.mT)
     

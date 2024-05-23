@@ -6,3 +6,4 @@ superposition/__pycache__
 
 _checkpoints
 wandb
+data/*
