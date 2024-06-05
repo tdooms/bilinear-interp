@@ -526,8 +526,10 @@ class Transformer(PreTrainedModel):
         return Transformer(config)
         
     @classmethod
-    def from_pretrained(cls, n_layer=1, d_model=512, modifier='', device='cuda', **kwargs):
-        name = f"tdooms/TinyStories-{n_layer}-{d_model}-{modifier}"
+    def from_pretrained(cls, n_layer=1, d_model=512, modifier=None, device='cuda', **kwargs):
+        name = f"tdooms/TinyStories-{n_layer}-{d_model}"
+        if modifier is not None: name += f"-{modifier}"
+        
         config = Config.from_pretrained(name)
         return super(Transformer, Transformer).from_pretrained(name, config=config, device_map=device, **kwargs)
     
@@ -608,7 +610,7 @@ class Transformer(PreTrainedModel):
         Returns:
             _type_: _description_
         """
-        input_ids = self.tokenizer.encode(prompt, return_tensors="pt")[..., :-1].to(self.device)
+        input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
         max_length = min(max_length or self.config.n_ctx, self.config.n_ctx - input_ids.size(-1) - 1)
         
         for _ in range(max_length):

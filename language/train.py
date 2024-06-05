@@ -12,17 +12,18 @@ model = Transformer.from_config(
     mlp="blp",
     d_hidden=1024*3,
     normalization=None,
-    n_head=8
+    n_head=8,
+    noise=0.33,
 )
 
 model.summary()
 # %%
 
-model.fit(log=True, epochs=5, wd=0.1, batch_size=128)
+model.fit(log=True, epochs=5, wd=1, batch_size=128)
 
 # %%
 
-model.push_to_hub(f"TinyStories-1-1024-i5")
+model.push_to_hub(f"TinyStories-1-1024-i5nn")
 
 # %%
 

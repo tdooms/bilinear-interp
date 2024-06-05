@@ -161,7 +161,7 @@ class MnistModel(nn.Module):
                 images = images.reshape(-1, 28*28).to(self.cfg.device)
                 labels = labels.to(self.cfg.device)
 
-                #input noise
+                # input noise
                 noise_mask = torch.bernoulli(self.cfg.noise_sparse * torch.ones_like(images)).bool()
                 images[noise_mask] = 1 - images[noise_mask]
                 images += self.cfg.noise_dense * torch.randn_like(images)
