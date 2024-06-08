@@ -1,3 +1,4 @@
+from typing import Optional
 
 import torch
 import pandas as pd
@@ -6,124 +7,15 @@ from torch.nn.functional import scaled_dot_product_attention
 from einops import *
 from transformers.modeling_outputs import CausalLMOutput
 from transformers import PretrainedConfig, PreTrainedModel, AutoTokenizer, DataCollatorForLanguageModeling
-from bidict import bidict
-from typing import Union, List, Optional, Tuple, Any
 from torch import Tensor
-from jaxtyping import Int, Float
+from jaxtyping import Float
 from datasets import load_dataset
 import wandb
 from transformers import TrainingArguments, Trainer
-import evaluate
-from collections import Counter
 
-class UBE:
-    def __init__(self, inner) -> None:
-        self.inner = inner
-    
-    def diagonal(self, residual=False, layer=0):
-        inner = self.inner
-        
-        diag = einsum(inner.b[layer], inner.w_e, inner.w_u, "res emb emb, emb in, out res -> out in")
-            
-        if residual:
-            diag += einsum(inner.w_e, inner.w_u, "res in, out res -> out in")
-        
-        return diag
-    
-    def interaction(self, idx, residual=False, layer=0):
-        inner = self.inner
-        
-        inter = einsum(
-            inner.w_e, inner.w_e, inner.b[layer], inner.w_u[idx],
-            "emb1 in1, emb2 in2, out emb1 emb2, out -> in1 in2"
-        )
-        
-        if residual:
-            inter += einsum(inner.w_e, inner.w_e, inner.w_u[idx], "res in1, res in2, res -> in1 in2")
-        
-        return inter
-    
-class Vocab:
-    def __init__(self, tokenizer: AutoTokenizer):
-        self.vocab = bidict(tokenizer.vocab)
-        self.tokenizer = tokenizer
-    
-    def get_max_activations(self, tensor, axes, k=10, largest=True, val_name="value"):
-        top = torch.topk(tensor.flatten(), k=k, largest=largest)
-        dims = torch.unravel_index(top.indices, tensor.size())
-        
-        data = {k: self.__getitem__(v.cpu()) for k, v in zip(axes, dims)}
-        data[val_name] = top.values.cpu()
-        
-        return pd.DataFrame(data)
-    
-    def describe(self, tensor, axes, k=10):
-        assert len(axes) == tensor.dim(), "Axis names must match tensor dimensions."
-        
-        hig = torch.topk(tensor.flatten(), k=k, largest=True)
-        low = torch.topk(tensor.flatten(), k=k, largest=False)
-        
-        values = torch.cat([hig.values, low.values.flip(0)])
-        indices = torch.cat([hig.indices, low.indices.flip(0)])
-        
-        dims = torch.unravel_index(indices, tensor.size())
-        
-        data = {k: self[v] for k, v in zip(axes, dims)}
-        return pd.DataFrame({**data, "value": values})
-        
-    def make_labels(self, prompt):
-        tokens = self.tokenizer.tokenize(prompt)
-        counts = [Counter(tokens[:i])[token] for i, token in enumerate(tokens)]
-        empty = '‎'
-        return ["BOS"] + [f"{tok} {empty * cnt}" for tok, cnt in zip(tokens, counts)] + ["EOS"]
-    
-    @property
-    def tokens(self):
-        """Gets the full list of tokens in the vocabulary.
+from language.utils import UBE, Vocab, Sight
+from shared import MLP, Norm
 
-        Returns:
-            List[str]: The list of tokens in the vocabulary. 
-        """
-        
-        return [self.inv[i] for i in range(len(self))]
-    
-    def __getitem__(self, key: str | int | List[int] | Int[Tensor, "indices"] | Tuple[int] | Tuple[str]):
-        """Gets the token/index associated with the given key.
-
-        Args:
-            key (Union[str, int, List[int], torch.Tensor]): The key to look up. Can be a handful of types.
-
-        Raises:
-            TypeError: If the key is not of type str, int, list, or torch.Tensor.
-
-        Returns:
-            token, index, or list of tokens: The token(s) associated with the given key.
-        """
-        
-        if isinstance(key, str):
-            return self.vocab[key]
-        elif isinstance(key, int):
-            return self.inv[key]
-        elif (isinstance(key, list), isinstance(key, tuple)) and all(isinstance(i, int) for i in key):
-            return [self.inv[i] for i in key]
-        elif (isinstance(key, list), isinstance(key, tuple)) and all(isinstance(i, str) for i in key):
-            return [self[i] for i in key]
-        elif isinstance(key, torch.Tensor):
-            return [self.inv[i.item()] for i in key]
-        else:
-            raise TypeError(f"Unsupported key type: {type(key)}")
-    
-    def __len__(self):
-        return len(self.vocab)
-    
-    @property
-    def inv(self):
-        return self.vocab.inv
-    
-    @property
-    def inverse(self):
-        return self.vocab.inverse
-    
 
 class Config(PretrainedConfig):
     def __init__(
@@ -134,14 +26,9 @@ class Config(PretrainedConfig):
         n_ctx: int = 256,
         d_model: int = 4 * 64,
         d_hidden: int = 4 * 4 * 64,
-        attn_dropout: float = 0.0,
-        resid_dropout: float = 0.0,
-        mlp_dropout: float = 0.0,
-        embed_dropout: float = 0.0,
-        mlp: str = 'blp',
-        normalization: str | None = 'rms',
-        norm_bias: bool = False,
-        mlp_bias: bool = False,
+        bilinear: bool = True,
+        gate: bool = False,
+        normalization: bool = True,
         modifier: str | None = None,
         noise: float | None = None,
         **kwargs
@@ -153,23 +40,16 @@ class Config(PretrainedConfig):
         self.d_model = d_model
         self.d_hidden = d_hidden
         
-        self.attn_dropout = attn_dropout
-        self.resid_dropout = resid_dropout
-        self.mlp_dropout = mlp_dropout
-        self.embed_dropout = embed_dropout
-        
-        self.mlp = mlp
+        self.bilinear = bilinear
+        self.gate = gate
         self.normalization = normalization
-        
-        self.norm_bias = norm_bias
-        self.mlp_bias = mlp_bias
-        
+
         self.noise = noise
         
         self.modifier = modifier
         
         super().__init__(**kwargs)
-        
+    
     @property
     def d_head(self):
         assert self.d_model % self.n_head == 0, "d_model must be divisible by n_head"
@@ -198,7 +78,7 @@ class Rotary(torch.nn.Module):
     def forward(self, q, k, device):
         seq_len = q.size(-2)
         
-        # using isinstance does not work
+        # Using isinstance does not work, this is necessary for NNSight compatibility
         if (seq_len != self.seq_len_cached) or type(self.cos_cached) != torch.Tensor:
             self.seq_len_cached = seq_len
             
@@ -220,117 +100,43 @@ class Attention(nn.Module):
         self.rotary = Rotary(config.d_model // config.n_head)
         self.qkv = nn.Linear(config.d_model, 3 * config.d_model, bias=False)
         self.o = nn.Linear(config.d_model, config.d_model, bias=False)
-        self.dropout = nn.Dropout(config.resid_dropout)
-    
-    def forward(self, x: Float[Tensor, "batch seq d_model"], attention_mask=None) -> Float[Tensor, "batch seq d_model"]:
-        n_head = self.config.n_head
-        dropout = self.config.attn_dropout if self.training else 0
         
-        qkv = self.qkv(x)
-        q, k, v = rearrange(qkv, 'batch seq (n_proj n_head d_head) -> n_proj batch n_head seq d_head', n_proj=3, n_head=n_head).unbind(dim=0)
-        q, k = self.rotary(q, k, q.device)
-        
-        # I'll probably have to remove this if we want to interpret its internal activations at some point.
-        z = scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=dropout, is_causal=True)
-        
-        z = rearrange(z, 'batch n_head seq d_head -> batch seq (n_head d_head)')
-        return self.dropout(self.o(z))
-
-
-class BLP(nn.Module):
-    def __init__(self, config: Config) -> None:
-        super().__init__()
-        
-        self.w = nn.Linear(config.d_model, 2 * config.d_hidden, bias=config.mlp_bias)
-        self.o = nn.Linear(config.d_hidden, config.d_model, bias=False) # I should change this to 'self.p'
-        self.drop = nn.Dropout(config.mlp_dropout)
+        self.softmax = nn.Softmax(dim=-1)
+        self.mask = torch.tril(torch.ones(config.n_ctx, config.n_ctx))[None, None, :, :]
     
     def forward(self, x: Float[Tensor, "batch seq d_model"]) -> Float[Tensor, "batch seq d_model"]:
-        left, right = self.w(x).chunk(2, dim=-1)
-        return self.drop(self.o(left * right))
-
-
-class MLP(nn.Module):
-    def __init__(self, config: Config) -> None:
-        super().__init__()
+        n_head = self.config.n_head
         
-        self.w = nn.Linear(config.d_model, config.d_hidden)
-        self.o = nn.Linear(config.d_hidden, config.d_model, bias=False)
+        qkv = self.qkv(x)
+        q, k, v = rearrange(qkv, 'batch seq (n n_head d_head) -> n batch n_head seq d_head', n=3, n_head=n_head).unbind(dim=0)
+        q, k = self.rotary(q, k, q.device)
         
-        self.gelu = nn.GELU()
-        self.drop = nn.Dropout(config.mlp_dropout)
-    
-    def forward(self, x):
-        return self.drop(self.o(self.gelu(self.w(x))))
-
-class GLP(nn.Module):
-    def __init__(self, config: Config) -> None:
-        super().__init__()
-        
-        self.w = nn.Linear(config.d_model, 2 * config.d_hidden, bias=config.mlp_bias)
-        self.o = nn.Linear(config.d_hidden, config.d_model, bias=False) # I should change this to 'self.p'
-        
-        self.gelu = nn.GELU()
-        self.drop = nn.Dropout(config.mlp_dropout)
-    
-    def forward(self, x):
-        left, right = self.w(x).chunk(2, dim=-1)
-        return self.drop(self.o(self.gelu(left) * right))
-
-
-class Noise(nn.Module):
-    def __init__(self, scale) -> None:
-        super().__init__()
-        self.scale = scale
-    
-    def forward(self, x):
-        if self.training and self.scale is not None:
-            return x + torch.randn_like(x) * self.scale * torch.std(x, dim=-1, keepdim=True)
+        if self.train:
+            z = scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True)
         else:
-            return x
-    
-    
-class RMSNorm(nn.Module):
-    def __init__(self, dims, bias=False):
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(dims))
-        self.bias = nn.Parameter(torch.zeros(dims)) if bias else None
-        self.eps = 1e-8
-    
-    def forward(self, x):
-        return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.weight + (0 if self.bias is None else self.bias)
-
-
-class Norm(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        
-        self.norm = {
-            'rms': RMSNorm,
-            'ln': nn.LayerNorm,
-            None: nn.Identity
-        }[config.normalization](config.d_model, config.norm_bias)
-        
-        self.noise = Noise(config.noise)
-        
-    def forward(self, x):
-        return self.noise(self.norm(x))
-        
+            scores = einsum(q, k, "batch n_head seq_q d_head, batch n_head seq_k d_head -> batch n_head seq_q seq_k")
+            scores = scores / (torch.tensor(q.size(-1), device=x.device).sqrt())
+            scores = scores.masked_fill(self.mask[:,:,:x.size(1),:x.size(1)].to(scores.device) == 0, -torch.inf)
+            
+            pattern = self.softmax(scores)
+            z = einsum(pattern, v, "batch n_head seq_q seq_k, batch n_head seq_k d_head -> batch n_head seq_q d_head")
+            
+        z = rearrange(z, 'batch n_head seq d_head -> batch seq (n_head d_head)')
+        return self.o(z)
+   
 
 class Layer(nn.Module):
     def __init__(self, config: Config) -> None:
         super().__init__()
         
-        mlp_fn = dict(blp=BLP, mlp=MLP, glp=GLP)
-        
         self.attn = Attention(config)
-        self.mlp = mlp_fn[config.mlp](config)
+        self.mlp = MLP(config.d_model, config.d_hidden, bilinear=config.bilinear, gate=config.gate)
         
-        self.n1 = Norm(config)
-        self.n2 = Norm(config)
+        self.n1 = Norm(config.d_model, config.normalization, config.noise)
+        self.n2 = Norm(config.d_model, config.normalization, config.noise)
     
-    def forward(self, x, attention_mask=None):
-        x = x + self.attn(self.n1(x), attention_mask)
+    def forward(self, x):
+        x = x + self.attn(self.n1(x))
         x = x + self.mlp(self.n2(x))
         return x
         
@@ -339,21 +145,19 @@ class Transformer(PreTrainedModel):
     def __init__(self, config: Config):
         super().__init__(config)
         self.config = config
-        self.tokenizer = AutoTokenizer.from_pretrained(f"tdooms/TinyStories-{config.n_vocab}-uncased", pad_token="[EOS]")
+        
+        self.url = "tdooms/TinyStories"
+        self.tokenizer = AutoTokenizer.from_pretrained(f"{self.url}-{config.n_vocab}", pad_token="[EOS]")
         
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.n_vocab, config.d_model),
-            drop = nn.Dropout(config.embed_dropout),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
-            n_f = Norm(config)
+            n_f = Norm(config.d_model, config.normalization, config.noise)
         ))
         
         self.lm_head = nn.Linear(config.d_model, config.n_vocab, bias=False)
         self.criterion = nn.CrossEntropyLoss()
         
-        # self.transformer.wte.weight = self.lm_head.weight
-        
-        # Haven't studied this, it reduces the loss from ~1.8 to ~1.7 on 10% training data.
         self.apply(self._init_weights)
 
     def _init_weights(self, module):
@@ -362,15 +166,14 @@ class Transformer(PreTrainedModel):
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02) 
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
         
-    def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
-        embed = self.transformer.wte(input_ids)
-        x = self.transformer.drop(embed)
+    def forward(self, input_ids=None, labels=None, **kwargs):
+        x = self.transformer.wte(input_ids)
         
         for layer in self.transformer.h:
-            x = layer(x, attention_mask)
-        
+            x = layer(x)
+    
         x = self.transformer.n_f(x)
         logits = self.lm_head(x)
         
@@ -392,7 +195,7 @@ class Transformer(PreTrainedModel):
         self.lm_head.weight = nn.Parameter(self.lm_head.weight - self.lm_head.weight.mean(dim=1, keepdim=True))
         return self
     
-    def fold_norms(self, approximation=None):
+    def fold_norms(self):
         for layer in self.transformer.h:
             layer.attn.qkv.weight.data = layer.attn.qkv.weight.data * layer.n1.weight.data[None, :]
             layer.mlp.w.weight.data = layer.mlp.w.weight.data * layer.n2.weight.data[None, :]
@@ -404,8 +207,37 @@ class Transformer(PreTrainedModel):
         self.transformer.n_f.weight.data = torch.ones_like(self.transformer.n_f.weight.data)
         
         return self
+    
+    @classmethod
+    def from_config(csl, *args, **kwargs):
+        config = Config(*args, **kwargs)
+        return Transformer(config)
         
+    @classmethod
+    def from_pretrained(cls, n_layer=1, d_model=512, modifier=None, device='cuda', **kwargs):
+        url = "tdooms/TinyStories"
+        name = f"{url}-{n_layer}-{d_model}"
+        if modifier is not None: name += f"-{modifier}"
         
+        config = Config.from_pretrained(name)
+        return super(Transformer, Transformer).from_pretrained(name, config=config, device_map=device, **kwargs)
+    
+    def dataset(self, collated: bool = False, tokenized: bool = False, split: str | None = None):
+        if collated and not tokenized:
+            raise ValueError("is collated is True, the dataset must be tokenized")
+        
+        location = f"{self.url}-tokenized-{self.config.n_vocab}" if tokenized else self.url
+        dataset = load_dataset(location, split=split)
+        
+        return self.collator(dataset["input_ids"]) if collated else dataset
+    
+    def tokenize(self, dataset):
+        return self.tokenizer(dataset["text"], truncation=True, padding=True, max_length=256)
+    
+    @property
+    def sight(self):
+        return Sight(self, tokenizer=self.tokenizer)
+    
     @property
     def vocab(self):
         return Vocab(self.tokenizer)
@@ -477,10 +309,78 @@ class Transformer(PreTrainedModel):
     
     @property
     def name(self):
-        if self.config.modifier is None:
-            return f"TinyStories-{self.config.n_layer}-{self.config.d_model}"
-        else:
-            return f"TinyStories-{self.config.n_layer}-{self.config.d_model}-{self.config.modifier}"
+        modifier = "" if self.config.modifier is None else f"-{self.config.modifier}"
+        return f"{self.url}-{self.config.n_layer}-{self.config.d_model}{modifier}"
+    
+    @property
+    def collator(self, **kwargs):
+        return DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
+    
+    def fit(self, log=True, lr=1e-3, wd=0.05, batch_size=128, epochs=1, eval_steps=10_000, **kwargs):
+        dataset = self.dataset(tokenized=True)
+        train, validation = dataset["train"], dataset["validation"]
+        
+        training_args = TrainingArguments(
+            # use_cpu=True,
+            output_dir="_checkpoints",
+            learning_rate=lr,
+            per_device_train_batch_size=batch_size,
+            per_device_eval_batch_size=batch_size,
+            num_train_epochs=epochs,
+            weight_decay=wd,
+            do_eval=True,
+            evaluation_strategy="steps",
+            eval_steps=eval_steps,
+            report_to="wandb" if log else None,
+            remove_unused_columns=False,
+            **kwargs
+        )
+
+        trainer = Trainer(
+            model=self,
+            args=training_args,
+            train_dataset=train,
+            eval_dataset=validation,
+            tokenizer=self.tokenizer,
+            data_collator=self.collator,
+        )
+        
+        if log: wandb.init(project="stories", config=self.config)
+        trainer.train()
+        if log: wandb.finish()
+        
+        return trainer
+
+    @torch.no_grad()
+    def generate(self,prompt: str = "", max_length: int | None = None, temperature: float = 1.0, top_k: int | None = None):
+        """The default naive generation method for the model.
+
+        Args:
+            prompt (str, optional): the prompt. Defaults to "".
+            max_length (Optional[int], optional): the generation length, is always capped to the ctx length. Defaults to None.
+            temperature (float, optional): a scale in the logits when sampling, makes outputs more volatile. Defaults to 1.0.
+            top_k (Optional[int], optional): the number of top tokens to choose from. Defaults to None.
+
+        Returns:
+            str: a string with the generated text
+        """
+        input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
+        max_length = min(max_length or self.config.n_ctx, self.config.n_ctx - input_ids.size(-1) - 1)
+        
+        for _ in range(max_length):
+            logits = self(input_ids).logits
+            logits = logits[:, -1, :] / temperature
+            
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -torch.inf
+
+            probs = torch.nn.functional.softmax(logits, dim=-1)
+            next_id = torch.multinomial(probs, num_samples=1)
+            input_ids = torch.cat((input_ids, next_id), dim=1)
+
+        out = self.tokenizer.decode(input_ids[0], skip_special_tokens=True)
+        return out.replace(" ##", "")
     
     def summary(self) -> pd.DataFrame:
         """Summarizes the model's architecture and parameter count into a dataframe.
@@ -519,119 +419,3 @@ class Transformer(PreTrainedModel):
         ]
         
         return pd.DataFrame(dict(name=names, parameters=parameters, dimensions=dims))
-
-    @classmethod
-    def from_config(csl, *args, **kwargs):
-        config = Config(*args, **kwargs)
-        return Transformer(config)
-        
-    @classmethod
-    def from_pretrained(cls, n_layer=1, d_model=512, modifier=None, device='cuda', **kwargs):
-        name = f"tdooms/TinyStories-{n_layer}-{d_model}"
-        if modifier is not None: name += f"-{modifier}"
-        
-        config = Config.from_pretrained(name)
-        return super(Transformer, Transformer).from_pretrained(name, config=config, device_map=device, **kwargs)
-    
-    def dataset(self, collated: bool = False, tokenized: bool = False, split: str | None = None):
-        if collated and not tokenized:
-            raise ValueError("is collated is True, the dataset must be tokenized")
-        
-        if tokenized:
-            dataset = load_dataset(f"tdooms/TinyStories-tokenized-{self.config.n_vocab}", split=split)
-        else:
-            dataset = load_dataset("tdooms/TinyStories", split=split)
-        
-        if collated:
-            return self.collator(dataset["input_ids"])
-        else: 
-            return dataset
-    
-    def tokenize(self, dataset):
-        return self.tokenizer(dataset["text"], truncation=True, padding=True, max_length=256)
-    
-    @property
-    def collator(self, **kwargs):
-        return DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
-    
-    def fit(self, log=True, lr=1e-3, wd=0.01, batch_size=16, epochs=1, eval_steps=10_000, **kwargs):
-        dataset = self.dataset(tokenized=True)
-        train, validation = dataset["train"], dataset["validation"]
-        
-        training_args = TrainingArguments(
-            # use_cpu=True,
-            output_dir="_checkpoints",
-            learning_rate=lr,
-            per_device_train_batch_size=batch_size,
-            per_device_eval_batch_size=batch_size,
-            num_train_epochs=epochs,
-            weight_decay=wd,
-            do_eval=True,
-            evaluation_strategy="steps",
-            eval_steps=eval_steps,
-            report_to="wandb" if log else None,
-            remove_unused_columns=False,
-            **kwargs
-        )
-
-        trainer = Trainer(
-            model=self,
-            args=training_args,
-            train_dataset=train,
-            eval_dataset=validation,
-            tokenizer=self.tokenizer,
-            data_collator=self.collator,
-        )
-        
-        if log: wandb.init(project="stories", config=self.config)
-        trainer.train()
-        if log: wandb.finish()
-        
-        return trainer
-
-    # @torch.no_grad()
-    def generate(
-            self,
-            prompt: str = "",
-            max_length: Optional[int] = None,
-            temperature: float = 1.0,
-            top_k: Optional[int] = None,
-            clean: bool = True
-        ):
-        """The default naive generation method for the model.
-
-        Args:
-            prompt (str, optional): the prompt. Defaults to "".
-            max_length (Optional[int], optional): the generation length, is always capped to the ctx length. Defaults to None.
-            temperature (float, optional): _description_. Defaults to 1.0.
-            top_k (Optional[int], optional): _description_. Defaults to None.
-            clean (bool, optional): _description_. Defaults to True.
-
-        Returns:
-            _type_: _description_
-        """
-        input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
-        max_length = min(max_length or self.config.n_ctx, self.config.n_ctx - input_ids.size(-1) - 1)
-        
-        for _ in range(max_length):
-            # forward the model to get the logits for the index in the sequence
-            logits = self(input_ids).logits
-            # pluck the logits at the final step and scale by desired temperature
-            logits = logits[:, -1, :] / temperature
-            # optionally crop the logits to only the top k options
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float('Inf')
-            # apply softmax to convert logits to (normalized) probabilities
-            probs = torch.nn.functional.softmax(logits, dim=-1)
-            # sample from the distribution
-            next_id = torch.multinomial(probs, num_samples=1)
-            # append sampled index to the running sequence and continue
-            input_ids = torch.cat((input_ids, next_id), dim=1)
-
-        out = self.tokenizer.decode(input_ids[0], skip_special_tokens=True)
-
-        if clean:
-            out = out.replace(" ##", "")
-        
-        return out

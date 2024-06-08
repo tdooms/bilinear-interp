@@ -5,7 +5,7 @@
 import torch
 from language import Transformer
 from nnsight import LanguageModel
-from sae import GatedSAE, Hook, Config
+from shared import GatedSAE, Hook, Config
 import plotly.express as px
 
 torch.set_grad_enabled(False)

@@ -7,7 +7,7 @@ from einops import *
 from language import Transformer
 import plotly.express as px
 from nnsight import LanguageModel
-from sae import Config, GatedSAE
+from shared import Config, GatedSAE
 from datasets import load_dataset
 
 # %%

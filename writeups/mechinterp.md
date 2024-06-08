@@ -1,4 +1,0 @@
-# Mechanistic Interpretability
-
-## Transcoders & Decompilation
-

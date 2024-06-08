@@ -6,7 +6,7 @@ import torch
 from einops import *
 from language import Transformer
 from nnsight import LanguageModel
-from sae import Config, GatedSAE
+from shared import Config, GatedSAE
 
 # %%
 

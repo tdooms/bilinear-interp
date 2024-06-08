@@ -7,7 +7,7 @@ from einops import *
 from language import Transformer
 import plotly.express as px
 from nnsight import LanguageModel
-from sae import Config, Sampler, GatedSAE, TranscoderConfig
+from shared import Config, Sampler, GatedSAE, TranscoderConfig
 from datasets import load_dataset
 # %%
 # torch.set_grad_enabled(False)

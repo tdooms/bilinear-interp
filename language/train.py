@@ -3,6 +3,7 @@
 %autoreload 2
 
 from language import Transformer
+import torch
 
 # %%
 
@@ -17,13 +18,14 @@ model = Transformer.from_config(
 )
 
 model.summary()
+# model = torch.compile(model)
 # %%
 
-model.fit(log=True, epochs=5, wd=1, batch_size=128)
+model.fit(log=False, epochs=5, wd=1, batch_size=128)
 
 # %%
 
-model.push_to_hub(f"TinyStories-1-1024-i5nn")
+model.push_to_hub(f"TinyStories-1-1024-i5n")
 
 # %%
 
