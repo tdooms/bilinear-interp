@@ -7,6 +7,7 @@ from functools import partial
 
 
 class Bilinear(nn.Linear):
+    """A bilinear layer with optional gate"""
     def __init__(self, d_in: int, d_out: int, bias=False, gate=False) -> None:
         super().__init__(d_in, 2 * d_out, bias=bias)
         self.gate = nn.ReLU() if gate else nn.Identity()
@@ -23,19 +24,23 @@ class Bilinear(nn.Linear):
     def r(self):
         return self.weight.chunk(2, dim=-1)[1]
 
+
 class Linear(nn.Linear):
+    """A linear layer with optional activation function for ease of use"""
     def __init__(self, d_in: int, d_out: int, bias=False, gate=True) -> None:
         super().__init__(d_in, d_out, bias=bias)
         self.gate = nn.ReLU() if gate else nn.Identity()
     
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
         return self.gate(super().forward(x))
-    
+
+
 class MLP(nn.Module):
+    """A general MLP implementation supporting bilinear, gated and ReLU activations"""
     def __init__(self, d_model: int, d_hidden: int, bias=False, bilinear=True, gate=False) -> None:
         super().__init__()
 
-        self.w = (Bilinear if bilinear else Linear)(d_model, d_hidden, bias=bias)
+        self.w = (Bilinear if bilinear else Linear)(d_model, d_hidden, bias=bias, gate=gate)
         self.o = nn.Linear(d_hidden, d_model, bias=bias) # should rename this to p
     
     def forward(self, x: Float[Tensor, "... d_model"]) -> Float[Tensor, "... d_model"]:
@@ -43,18 +48,21 @@ class MLP(nn.Module):
 
 
 class Noise(nn.Module):
-    def __init__(self, scale: float | None = None) -> None:
+    """Adding normed noise to the input of a layer"""
+    def __init__(self, scale: float | None = None, dim: int = -1) -> None:
         super().__init__()
         self.scale = scale
+        self.dim = dim
     
     def forward(self, x):
         if self.training and self.scale is not None:
-            return x + torch.randn_like(x) * self.scale * torch.std(x, dim=-1, keepdim=True)
+            return x + torch.randn_like(x) * self.scale * torch.std(x, dim=self.dim, keepdim=True)
         else:
             return x
     
-    
+
 class RMSNorm(nn.Module):
+    """PyTorch doesn't yet have RMSNorm implemented, this is the canonical implementation"""
     def __init__(self, dims, bias=False):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dims))
@@ -66,6 +74,7 @@ class RMSNorm(nn.Module):
 
 
 class Norm(nn.Module):
+    """A multi-function normalization layer with noise and bias options"""
     def __init__(self, d_model, normalization, noise, bias=False):
         super().__init__()
         

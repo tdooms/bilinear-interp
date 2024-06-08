@@ -43,7 +43,6 @@ class Config(PretrainedConfig):
         self.bilinear = bilinear
         self.gate = gate
         self.normalization = normalization
-
         self.noise = noise
         
         self.modifier = modifier
@@ -111,7 +110,7 @@ class Attention(nn.Module):
         q, k, v = rearrange(qkv, 'batch seq (n n_head d_head) -> n batch n_head seq d_head', n=3, n_head=n_head).unbind(dim=0)
         q, k = self.rotary(q, k, q.device)
         
-        if self.train:
+        if self.training:
             z = scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True)
         else:
             scores = einsum(q, k, "batch n_head seq_q d_head, batch n_head seq_k d_head -> batch n_head seq_q seq_k")

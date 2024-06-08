@@ -3,14 +3,12 @@
 %autoreload 2
 
 from language import Transformer
-import torch
 
 # %%
 
 model = Transformer.from_config(
     n_layer=1,
     d_model=1024,
-    mlp="blp",
     d_hidden=1024*3,
     normalization=None,
     n_head=8,
@@ -18,7 +16,6 @@ model = Transformer.from_config(
 )
 
 model.summary()
-# model = torch.compile(model)
 # %%
 
 model.fit(log=False, epochs=5, wd=1, batch_size=128)
@@ -40,8 +37,18 @@ model.generate("Once upon a time, ", max_length=100)
 # %%
 
 
-model = Transformer.from_config(n_layer=1, d_model=256, mlp="blp")
-model
+model = Transformer.from_config(n_layer=1, d_model=256).eval().half()
+sight = model.sight
+
+with sight.trace("once upon a time", validate=False, scan=False):
+    pre = sight["resid_pre", 0].save()
+    mid = sight["resid_mid", 0].save()
+    post = sight["resid_post", 0].save()
+    pattern = sight["pattern", 0].save()
+    scores = sight["scores", 0].save()
+    
+print(scores.shape)
+# model
 # from language.model import normalization
 # import torch
 

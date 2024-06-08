@@ -156,11 +156,14 @@ class Sight(LanguageModel):
         else:
             raise ValueError("Invalid arguments, should be a tuple or two arguments.")
         
-        point = point.replace("_", "-")
+        point = point.replace("-", "_")
         
-        return {
-            "resid-pre": self._envoy.transformer.h[layer].input[0][0],
-            "resid-mid": self._envoy.transformer.h[layer].n2.input[0][0],
-            "resid-post": self._envoy.transformer.h[layer].output,
-            "mlp-out": self._envoy.transformer.h[layer].mlp.output,
-        }[point]
+        return dict(
+            resid_pre=self._envoy.transformer.h[layer].input[0][0],
+            resid_mid=self._envoy.transformer.h[layer].n2.input[0][0],
+            resid_post=self._envoy.transformer.h[layer].output,
+            mlp_out=self._envoy.transformer.h[layer].mlp.output,
+            attn_out=self._envoy.transformer.h[layer].attn.output,
+            pattern=self._envoy.transformer.h[layer].attn.softmax.output,
+            scores=self._envoy.transformer.h[layer].attn.softmax.input[0][0],
+        )[point]

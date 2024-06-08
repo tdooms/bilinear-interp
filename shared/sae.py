@@ -104,7 +104,7 @@ class SAE(PreTrainedModel):
     
     @classmethod
     def from_config(cls, *args, **kwargs):
-        return SAE(Config(*args, **kwargs))   
+        return SAE(Config(*args, **kwargs))
     
     def metrics(self, x, x_hid, x_hat):
         self.inactive[rearrange(x_hid, "... d -> (...) d").sum(0) > 0] = 0
@@ -128,10 +128,12 @@ class SAE(PreTrainedModel):
         sight = model.sight
         train, validate = dataset["train"], dataset["validate"]
         
+        save = lambda d: {k: v.save() if hasattr(v, "save") else v for k, v in d.items()}
+        
         with sight.trace(train, validate=False, scan=False):
             hidden = sight[self.point].save()
             x_hat, metrics = self(hidden, metrics=True)
-            metrics = {k: v.save() if hasattr(v, "save") else v for k, v in metrics.items()}
+            metrics = save(metrics)
             sight[self.point][:] = x_hat
             
             loss = sight.output.loss.save()
