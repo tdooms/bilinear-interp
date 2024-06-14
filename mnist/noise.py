@@ -16,7 +16,7 @@ model = MnistModel.from_config(epochs=30, wd=0.5, latent_noise=0.3, input_noise=
 
 train, test = SMNIST(train=True), SMNIST(train=False)
 metrics = model.fit(train, test)
-px.line(metrics, y=["acc", "val_acc"], title="Acc")
+px.line(metrics, x=metrics.index, y=["train/acc", "val/acc"], title="Acc")
 # %%
 torch.set_grad_enabled(False)
 
@@ -32,3 +32,4 @@ vecs = einsum(vecs, e, "emb batch, emb inp -> batch inp")
 
 idxs = vals.abs().topk(5).indices
 px.imshow(vecs[idxs].view(-1, 28, 28).cpu(), facet_col=0, **color).show()
+# %%

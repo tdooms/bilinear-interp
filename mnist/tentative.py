@@ -133,19 +133,26 @@ class MnistModel(PreTrainedModel):
         history = []
         
         for _ in pbar:
-            total_loss, total_accuracy = 0.0, 0.0
+            epoch = []
             for x, y in loader:
-                loss, accuracy = self.train().step(x, y)
-                total_loss += loss.item()
-                total_accuracy += accuracy.item()
+                loss, acc = self.train().step(x, y)
+                epoch += [(loss.item(), acc.item())]
                 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
             scheduler.step()
             
-            val_loss, val_accuracy = self.eval().step(test_x, test_y)
-            history.append(dict(loss=loss.item(), acc=accuracy.item(), val_loss=val_loss.item(), val_acc=val_accuracy.item()))
-            pbar.set_description(f"Train Loss: {loss.item():.3f}, Train Acc: {accuracy.item():.3f}, Val Loss: {val_loss.item():.3f}, Val Acc: {val_accuracy.item():.3f}")
+            val_loss, val_acc = self.eval().step(test_x, test_y)
+
+            metrics = {
+                "train/loss": sum(loss for loss, _ in epoch) / len(epoch),
+                "train/acc": sum(acc for _, acc in epoch) / len(epoch),
+                "val/loss": val_loss.item(),
+                "val/acc": val_acc.item()
+            }
+            
+            history.append(metrics)
+            pbar.set_description(', '.join(f"{k}: {v:.3f}" for k, v in metrics.items()))
         
-        return DataFrame.from_records(history, columns=['loss', 'acc', 'val_loss', 'val_acc'])
+        return DataFrame.from_records(history, columns=['train/loss', 'train/acc', 'val/loss', 'val/acc'])
