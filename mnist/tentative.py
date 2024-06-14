@@ -1,19 +1,17 @@
-from transformers import PretrainedConfig, PreTrainedModel
-from torch import nn
-from jaxtyping import Float
-from torch import Tensor
 import torch
+from torch import nn, Tensor
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
+from torchvision.datasets import MNIST
+
+from transformers import PretrainedConfig, PreTrainedModel
+from jaxtyping import Float
 from operator import attrgetter
 from tqdm import tqdm
 from pandas import DataFrame
-from einops import rearrange
-from torch.utils.data import DataLoader
-from torchvision.datasets import MNIST
-from torch.utils.data import Dataset
 from einops import *
-import torch
 
 from shared import Linear, Bilinear
 
@@ -47,6 +45,7 @@ class MnistConfig(PretrainedConfig):
         d_output: int = 10,
         bias: bool = False,
         device: str = "cuda",
+        seed: int = 42,
         **kwargs
     ):
         self.lr = lr
@@ -61,16 +60,19 @@ class MnistConfig(PretrainedConfig):
         self.n_layer = n_layer
         self.d_input = d_input      # not really necessary
         self.d_output = d_output    # not really necessary
-        
         self.bias = bias
+        
         self.device = device
+        self.seed = seed
         
         super().__init__(**kwargs)
-    
+
 
 class MnistModel(PreTrainedModel):
     def __init__(self, config) -> None:
         super().__init__(config)
+        torch.manual_seed(config.seed)
+        
         d_hidden, n_layer, bias, d_input, d_output = attrgetter('d_hidden', 'n_layer', 'bias', 'd_input', 'd_output')(config)
         latent_noise, input_noise = attrgetter('latent_noise', 'input_noise')(config)
         
@@ -81,8 +83,8 @@ class MnistModel(PreTrainedModel):
         self.criterion = nn.CrossEntropyLoss()
         self.accuracy = lambda y_hat, y: (y_hat.argmax(dim=-1) == y).float().mean()
 
-        for layer in self.blocks:
-            nn.init.normal_(layer.weight.data, std=0.02)
+        # for layer in self.blocks:
+        #     nn.init.normal_(layer.weight.data, std=0.02)
     
     def forward(self, x: Float[Tensor, "... inputs"]) -> Float[Tensor, "... outputs"]:
         x = self.embed(x)
@@ -123,6 +125,9 @@ class MnistModel(PreTrainedModel):
         return loss, accuracy
     
     def fit(self, train, test):
+        # Reset the seed here too for reproducibility
+        torch.manual_seed(self.config.seed)
+        
         optimizer = AdamW(self.parameters(), lr=self.config.lr, weight_decay=self.config.wd)
         scheduler = CosineAnnealingLR(optimizer, T_max=self.config.epochs)
         

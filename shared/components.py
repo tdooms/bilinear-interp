@@ -19,14 +19,14 @@ class Noise(nn.Module):
         return x
     
 class Bilinear(nn.Linear):
-    """A bilinear layer with optional gate"""
+    """A bilinear layer with optional gate and noise"""
     def __init__(self, d_in: int, d_out: int, bias=False, gate=False, noise=None) -> None:
         super().__init__(d_in, 2 * d_out, bias=bias)
         self.noise = Noise(scale=noise) if noise else nn.Identity()
         self.gate = nn.ReLU() if gate else nn.Identity()
     
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
-        left, right = super().forward(x).chunk(2, dim=-1)
+        left, right = super().forward(self.noise(x)).chunk(2, dim=-1)
         return self.gate(left) * right
     
     @property
@@ -39,8 +39,8 @@ class Bilinear(nn.Linear):
 
 
 class Linear(nn.Linear):
-    """A linear layer with optional activation function for ease of use"""
-    def __init__(self, d_in: int, d_out: int, bias=False, gate=True, noise=None) -> None:
+    """A linear layer with optional gate and noise"""
+    def __init__(self, d_in: int, d_out: int, bias=False, gate=False, noise=None) -> None:
         super().__init__(d_in, d_out, bias=bias)
         self.noise = Noise(scale=noise) if noise else nn.Identity()
         self.gate = nn.ReLU() if gate else nn.Identity()
