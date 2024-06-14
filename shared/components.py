@@ -6,10 +6,23 @@ from jaxtyping import Float
 from functools import partial
 
 
+class Noise(nn.Module):
+    """Adding normed Gaussian noise to the activations"""
+    def __init__(self, scale: float | None = None) -> None:
+        super().__init__()
+        self.scale = scale
+    
+    def forward(self, x):
+        if self.training and self.scale is not None:
+            x = x + torch.randn_like(x) * self.scale * x.std()
+        
+        return x
+    
 class Bilinear(nn.Linear):
     """A bilinear layer with optional gate"""
-    def __init__(self, d_in: int, d_out: int, bias=False, gate=False) -> None:
+    def __init__(self, d_in: int, d_out: int, bias=False, gate=False, noise=None) -> None:
         super().__init__(d_in, 2 * d_out, bias=bias)
+        self.noise = Noise(scale=noise) if noise else nn.Identity()
         self.gate = nn.ReLU() if gate else nn.Identity()
     
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
@@ -27,12 +40,13 @@ class Bilinear(nn.Linear):
 
 class Linear(nn.Linear):
     """A linear layer with optional activation function for ease of use"""
-    def __init__(self, d_in: int, d_out: int, bias=False, gate=True) -> None:
+    def __init__(self, d_in: int, d_out: int, bias=False, gate=True, noise=None) -> None:
         super().__init__(d_in, d_out, bias=bias)
+        self.noise = Noise(scale=noise) if noise else nn.Identity()
         self.gate = nn.ReLU() if gate else nn.Identity()
     
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
-        return self.gate(super().forward(x))
+        return self.gate(super().forward(self.noise(x)))
 
 
 class MLP(nn.Module):
@@ -45,20 +59,6 @@ class MLP(nn.Module):
     
     def forward(self, x: Float[Tensor, "... d_model"]) -> Float[Tensor, "... d_model"]:
         return self.o(self.w(x))
-
-
-class Noise(nn.Module):
-    """Adding normed noise to the input of a layer"""
-    def __init__(self, scale: float | None = None, dim: int = -1) -> None:
-        super().__init__()
-        self.scale = scale
-        self.dim = dim
-    
-    def forward(self, x):
-        if self.training and self.scale is not None:
-            return x + torch.randn_like(x) * self.scale * torch.std(x, dim=self.dim, keepdim=True)
-        else:
-            return x
     
 
 class RMSNorm(nn.Module):

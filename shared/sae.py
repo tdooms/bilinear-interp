@@ -17,6 +17,7 @@ class SAEConfig(PretrainedConfig):
         point: Point | None = None,     # Hook point of the SAE on the model
         target: str = 'reconstruct',    # Target (reconstruct/transcode/eigen/...)
         loss: str = 'mse',              # Loss function to use (mse/e2e/e2e+ds/...)
+        lr: float = 1e-4,               # Learning rate
         d_model: int | None = None,     # Model dimension
         n_ctx: int = 256,               # Context length
         expansion: int = 4,             # SAE expansion factor
@@ -36,10 +37,11 @@ class SAEConfig(PretrainedConfig):
         
         assert loss == 'mse', "Only MSE loss is supported for now"
         
-        # SAE Related parameters
+        # SAE related parameters
         self.point = Point(*point) if isinstance(point, list) or isinstance(point, tuple) else point
         self.target = target
         self.loss = loss
+        self.lr = lr
         
         # Model related parameters
         self.d_model = d_model
@@ -212,17 +214,20 @@ class SAE(PreTrainedModel):
         
         loader = DataLoader(train, batch_size=128, shuffle=False)
         
+        # Select the step function based on the loss
         step = dict(
             mse=lambda: self._mse_step,
             e2e=lambda: self._e2e_step
         )[self.config.loss]()
         
+        # This is a cool trick to have different weight decays for different parts of the model
         parameters = [
             dict(params=list(self.w_enc.parameters()) + [self.b_dec], weight_decay=0.0),
             dict(params=self.w_dec.parameters(), weight_decay=self.config.decoder_decay)
         ]
         
-        optimizer = Adam(parameters, lr=1e-4)
+        # Note that we do not need to care about constraining the decoder
+        optimizer = Adam(parameters, lr=self.config.lr)
         scheduler = CosineAnnealingLR(optimizer, len(loader), 1e-5)
         
         pbar = tqdm(loader)
