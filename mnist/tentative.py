@@ -30,7 +30,40 @@ class SMNIST(Dataset):
     def __len__(self):
         return self.x.size(0)
 
-class MnistConfig(PretrainedConfig):
+class Eigen:
+    def __init__(self, model) -> None:
+        self.u = model.w_u
+        self.b = model.w_b
+        self.e = model.w_e
+
+    def __getitem__(self, index):
+        if isinstance(index, int):
+            index = (index,)
+        elif not isinstance(index, tuple):
+            raise TypeError(f"Index must be an int or a tuple, not {type(index)}")
+        
+        l, r = self.b[-1].unbind()
+        q = einsum(self.u[index[0]], l, r, "out, out in1, out in2 -> in1 in2")
+        q = 0.5 * (q + q.mT)
+        
+        vals, vecs = torch.linalg.eigh(q)
+        vecs = einsum(vecs, self.e, "emb batch, emb inp -> batch inp")
+        
+        if len(index) == 1:
+            return vals, vecs
+        
+        l, r = self.b[-2].unbind()
+        q = einsum(vecs[:, index[1]], l, r, "out, out in1, out in2 -> in1 in2")
+        q = 0.5 * (q + q.mT)
+        
+        vals, vecs = torch.linalg.eigh(q)
+        vecs = einsum(vecs, self.e, "emb batch, emb inp -> batch inp")
+        
+        # Currently, only 2 layers are supported
+        return vals, vecs
+    
+
+class Config(PretrainedConfig):
     def __init__(
         self,
         lr: float = 1e-3,
@@ -58,8 +91,8 @@ class MnistConfig(PretrainedConfig):
         
         self.d_hidden = d_hidden
         self.n_layer = n_layer
-        self.d_input = d_input      # not really necessary
-        self.d_output = d_output    # not really necessary
+        self.d_input = d_input
+        self.d_output = d_output
         self.bias = bias
         
         self.device = device
@@ -68,7 +101,7 @@ class MnistConfig(PretrainedConfig):
         super().__init__(**kwargs)
 
 
-class MnistModel(PreTrainedModel):
+class Model(PreTrainedModel):
     def __init__(self, config) -> None:
         super().__init__(config)
         torch.manual_seed(config.seed)
@@ -106,13 +139,17 @@ class MnistModel(PreTrainedModel):
     def w_b(self):
         return torch.stack([rearrange(layer.weight.data, "(s o) h -> s o h", s=2) for layer in self.blocks])
     
+    @property
+    def eigen(self):
+        return Eigen(self)
+    
     @classmethod
     def from_config(cls, *args, **kwargs):
-        return cls(MnistConfig(*args, **kwargs))
+        return cls(Config(*args, **kwargs))
 
     @classmethod
     def from_pretrained(cls, path, *args, **kwargs):
-        new = cls(MnistConfig(*args, **kwargs))
+        new = cls(Config(*args, **kwargs))
         new.load_state_dict(torch.load(path))
         return new
     
@@ -125,7 +162,6 @@ class MnistModel(PreTrainedModel):
         return loss, accuracy
     
     def fit(self, train, test):
-        # Reset the seed here too for reproducibility
         torch.manual_seed(self.config.seed)
         
         optimizer = AdamW(self.parameters(), lr=self.config.lr, weight_decay=self.config.wd)
