@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import wandb
+from shared.components import Bilinear
 
 Point = namedtuple('Point', ['name', 'layer'])
 
@@ -15,7 +16,7 @@ class SAEConfig(PretrainedConfig):
     def __init__(
         self,
         point: Point | None = None,     # Hook point of the SAE on the model
-        target: str = 'reconstruct',    # Target (reconstruct/transcode/eigen/...)
+        target: Point | None = None,    # Point at which to reconstruct in the model
         loss: str = 'mse',              # Loss function to use (mse/e2e/e2e+ds/...)
         lr: float = 1e-4,               # Learning rate
         d_model: int | None = None,     # Model dimension
@@ -26,6 +27,7 @@ class SAEConfig(PretrainedConfig):
         dead_thresh: int = 2,           # Steps before a neuron is considered dead
         normalize: float | None = None, # A normalization value for all inputs
         init_scale: float = 1.0,        # Encoder initialization scale
+        bilinear: bool = False,         # Whether to use a bilinear encoder
         token_lookup: bool = False,     # Whether to use a token lookup table
         decoder_decay: float = 0.0,     # Decoder weight decay factor
         modifier: str | None = None,    # A modifier for the model name
@@ -39,7 +41,7 @@ class SAEConfig(PretrainedConfig):
         
         # SAE related parameters
         self.point = Point(*point) if isinstance(point, list) or isinstance(point, tuple) else point
-        self.target = target
+        self.target = Point(*target) if isinstance(target, list) or isinstance(target, tuple) else target
         self.loss = loss
         self.lr = lr
         
@@ -61,6 +63,7 @@ class SAEConfig(PretrainedConfig):
         
         # Encoder related parameters
         self.init_scale = init_scale
+        self.bilinear = bilinear
         
         # Decoder related parameters
         self.token_lookup = token_lookup
@@ -86,11 +89,18 @@ class SAE(PreTrainedModel):
         
         self.inactive = torch.zeros(self.d_hidden)
         
-        self.w_enc = nn.Linear(self.d_model, self.d_hidden, bias=True)
         self.w_dec = nn.Linear(self.d_hidden, self.d_model, bias=False)
-        
         self.w_dec.weight.data /= torch.norm(self.w_dec.weight.data, dim=-2, keepdim=True)
-        self.w_enc.weight.data = config.init_scale * self.w_dec.weight.data.T.clone()
+        
+        if config.bilinear:
+            # Initialize one side with transpose and other with constant bias
+            # I'm leaving the Kaiming init intact currently, not sure how to handle this
+            self.w_enc = Bilinear(self.d_model, self.d_hidden, bias=True)
+            self.w_enc.w_l[:] = config.init_scale * self.w_dec.weight.data.T.clone()
+            self.w_dec.b_r[:] = 1
+        else:
+            self.w_enc = nn.Linear(self.d_model, self.d_hidden, bias=True)
+            self.w_enc.weight.data = config.init_scale * self.w_dec.weight.data.T.clone()
         
         self.b_dec = nn.Parameter(torch.zeros(self.d_model, device=device))
         self.register_parameter('b_dec', self.b_dec)
@@ -132,20 +142,6 @@ class SAE(PreTrainedModel):
         x_hat = self.decode(x_hid)
         return x_hat, x_hid
     
-    def transform(self, x):
-        """A transformation on the input to be used as target for reconstruction"""
-        
-        if self.config.target == 'reconstruct':
-            return x
-        elif self.config.target == 'transcode':
-            # We need some model weights for this
-            raise NotImplementedError("Transcoding is not yet supported")
-        elif self.config.target == 'eigen':
-            # We probably need some external information for this
-            raise NotImplementedError("Eigenvalue decomposition is not yet supported")
-        else:
-            raise ValueError(f"Unknown target {self.config.target}")
-    
     def name(self, base):
         config = self.config
         modifier = f"-{config.modifier}" if config.modifier is not None else ""
@@ -166,7 +162,6 @@ class SAE(PreTrainedModel):
     def metrics(self, x, x_hid, x_hat):
         """Computes all interesting metrics for the model"""
         
-        x = self.transform(x)
         self.inactive[rearrange(x_hid, "... d -> (...) d").sum(0) > 0] = 0
         
         mse = (x - x_hat).pow(2).mean()
@@ -183,7 +178,7 @@ class SAE(PreTrainedModel):
         self.inactive += 1
         return metrics
             
-    def _mse_step(self, sight, batch):
+    def _reconstruct_step(self, sight, batch):
         """Sample and reconstruct a batch, returning the local loss"""
         
         with sight.trace(batch, validate=False, scan=False):
@@ -192,14 +187,31 @@ class SAE(PreTrainedModel):
         x_hat, x_hid = self(x.detach())
         metrics = self.metrics(x, x_hid, x_hat)
         return metrics["mse"], metrics
+    
+    def _transcode_step(self, sight, batch):
+        """Sample and transcode a batch, returning the local loss"""
         
+        with sight.trace(batch, validate=False, scan=False):
+            x = sight[self.point].save()
+            y = sight[self.target].save()
+        
+        x_hat, x_hid = self(x.detach())
+        metrics = self.metrics(y, x_hid, x_hat)
+        return metrics["mse"], metrics
+    
     def _e2e_step(self, sight, batch):
         """Sample and patch in the reconstruction, retuning the global loss"""
+        target = self.target if self.target else self.point
+        
         with sight.trace(batch, validate=False, scan=False):
             x = sight[self.point].save()
             x_hat, x_hid = self(x.detach()).save()
-        
-            sight[self.point][:] = x_hat
+
+            # This is a bit hacky but it overwrites x in case of a transcode
+            if self.target is not None:
+                x = sight[target].save()
+            
+            sight[target][:] = x_hat
             loss = sight.output.loss.save()
         
         metrics = self.metrics(x, x_hid, x_hat)
@@ -216,7 +228,7 @@ class SAE(PreTrainedModel):
         
         # Select the step function based on the loss
         step = dict(
-            mse=lambda: self._mse_step,
+            mse=lambda: self._reconstruct_step if self.config.target else self._transcode_step,
             e2e=lambda: self._e2e_step
         )[self.config.loss]()
         
