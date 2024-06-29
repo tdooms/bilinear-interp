@@ -23,7 +23,7 @@ class SAEConfig(PretrainedConfig):
         n_ctx: int = 256,               # Context length
         expansion: int = 4,             # SAE expansion factor
         k: int = 16,                    # Top-k sparsity, no other sparsity is supported
-        validation_steps: int = 1000,   # Validation interval
+        val_steps: int = 100,          # Validation interval
         dead_thresh: int = 2,           # Steps before a neuron is considered dead
         normalize: float | None = None, # A normalization value for all inputs
         init_scale: float = 1.0,        # Encoder initialization scale
@@ -54,7 +54,7 @@ class SAEConfig(PretrainedConfig):
         self.k = k
         
         # Metric related parameters
-        self.validation_interval = validation_steps
+        self.val_steps = val_steps
         self.dead_thresh = dead_thresh
         
         # Setup related parameters
@@ -83,6 +83,7 @@ class SAE(PreTrainedModel):
         
         self.config = config
         self.point = config.point
+        self.target = config.target if config.target is not None else config.point
         self.d_model = config.d_model
         self.d_hidden = config.expansion * self.d_model
         self.n_ctx = config.n_ctx
@@ -93,11 +94,7 @@ class SAE(PreTrainedModel):
         self.w_dec.weight.data /= torch.norm(self.w_dec.weight.data, dim=-2, keepdim=True)
         
         if config.bilinear:
-            # Initialize one side with transpose and other with constant bias
-            # I'm leaving the Kaiming init intact currently, not sure how to handle this
             self.w_enc = Bilinear(self.d_model, self.d_hidden, bias=True)
-            self.w_enc.w_l[:] = config.init_scale * self.w_dec.weight.data.T.clone()
-            self.w_dec.b_r[:] = 1
         else:
             self.w_enc = nn.Linear(self.d_model, self.d_hidden, bias=True)
             self.w_enc.weight.data = config.init_scale * self.w_dec.weight.data.T.clone()
@@ -163,7 +160,6 @@ class SAE(PreTrainedModel):
         """Computes all interesting metrics for the model"""
         
         self.inactive[rearrange(x_hid, "... d -> (...) d").sum(0) > 0] = 0
-        
         mse = (x - x_hat).pow(2).mean()
         
         metrics = dict()
@@ -181,54 +177,38 @@ class SAE(PreTrainedModel):
     def _reconstruct_step(self, sight, batch):
         """Sample and reconstruct a batch, returning the local loss"""
         
-        with sight.trace(batch, validate=False, scan=False):
-            x = sight[self.point].save()
-        
-        x_hat, x_hid = self(x.detach())
-        metrics = self.metrics(x, x_hid, x_hat)
-        return metrics["mse"], metrics
-    
-    def _transcode_step(self, sight, batch):
-        """Sample and transcode a batch, returning the local loss"""
-        
-        with sight.trace(batch, validate=False, scan=False):
+        with torch.no_grad(), sight.trace(batch, validate=False, scan=False):
             x = sight[self.point].save()
             y = sight[self.target].save()
         
-        x_hat, x_hid = self(x.detach())
+        x_hat, x_hid = self(x)
         metrics = self.metrics(y, x_hid, x_hat)
         return metrics["mse"], metrics
     
     def _e2e_step(self, sight, batch):
         """Sample and patch in the reconstruction, retuning the global loss"""
-        target = self.target if self.target else self.point
+        
+        with torch.no_grad(), sight.trace(batch, validate=False, scan=False):
+            x = sight[self.point].save()
+            clean = sight.output.loss.save()
+        
+        x_hat, x_hid = self(x)
         
         with sight.trace(batch, validate=False, scan=False):
-            x = sight[self.point].save()
-            x_hat, x_hid = self(x.detach()).save()
-
-            # This is a bit hacky but it overwrites x in case of a transcode
-            if self.target is not None:
-                x = sight[target].save()
-            
-            sight[target][:] = x_hat
+            sight[self.target][:] = x_hat
             loss = sight.output.loss.save()
-        
+            
         metrics = self.metrics(x, x_hid, x_hat)
-        return loss, metrics
+        return clean, loss, metrics
     
-    def fit(self, model, log=True):
+    def fit(self, sight, train, validate, log=True):
         """A general fit function with a default training loop"""
-        
-        sight = model.sight
-        dataset = model.dataset(tokenized=True) # Maybe this should be a parameter
-        train, validate = dataset["train"], dataset["validation"]
-        
+        if log: wandb.init(project="story_sae")
         loader = DataLoader(train, batch_size=128, shuffle=False)
         
         # Select the step function based on the loss
         step = dict(
-            mse=lambda: self._reconstruct_step if self.config.target else self._transcode_step,
+            mse=lambda: self._reconstruct_step,
             e2e=lambda: self._e2e_step
         )[self.config.loss]()
         
@@ -243,7 +223,8 @@ class SAE(PreTrainedModel):
         scheduler = CosineAnnealingLR(optimizer, len(loader), 1e-5)
         
         pbar = tqdm(loader)
-        for batch in pbar:
+        added = float("nan")
+        for idx, batch in enumerate(pbar):
             loss, metrics = step(sight, batch)
             
             optimizer.zero_grad()
@@ -251,8 +232,13 @@ class SAE(PreTrainedModel):
             optimizer.step()
             scheduler.step()
             
-            # if log: wandb.log(metrics)
-            pbar.set_description(f"loss: {loss:.4f}, L1: {metrics['l1'].item():.4f}")
-        
-        # TODO: perform validation once in a while, this should use _e2e_step for CE loss.
-        
+            if validate and idx % self.config.val_steps == 0:
+                clean, loss, _ = self._e2e_step(sight, validate)
+                metrics['val/added'] = (loss.item() / clean.item()) - 1
+                added = metrics['val/added']
+            
+            pbar.set_description(f"L1: {metrics['l1']:.4f}, NMSE: {metrics['nmse']:.4f}, added: {added:.4f}")
+                        
+            if log: wandb.log(metrics)
+        if log: wandb.finish()
+            

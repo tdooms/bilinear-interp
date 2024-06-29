@@ -13,7 +13,7 @@ from datasets import load_dataset
 import wandb
 from transformers import TrainingArguments, Trainer
 
-from language.utils import UBE, Vocab, Sight
+from language.utils import UBE, Vocab, StoriesSight
 from shared import MLP, Norm
 
 
@@ -221,21 +221,16 @@ class Transformer(PreTrainedModel):
         config = Config.from_pretrained(name)
         return super(Transformer, Transformer).from_pretrained(name, config=config, device_map=device, **kwargs)
     
-    def dataset(self, collated: bool = False, tokenized: bool = False, split: str | None = None):
-        if collated and not tokenized:
-            raise ValueError("is collated is True, the dataset must be tokenized")
-        
+    def dataset(self, tokenized: bool = False, split: str | None = None):
         location = f"{self.url}-tokenized-{self.config.n_vocab}" if tokenized else self.url
-        dataset = load_dataset(location, split=split)
-        
-        return self.collator(dataset["input_ids"]) if collated else dataset
+        return load_dataset(location, split=split)
     
     def tokenize(self, dataset):
         return self.tokenizer(dataset["text"], truncation=True, padding=True, max_length=256)
     
     @property
     def sight(self):
-        return Sight(self, tokenizer=self.tokenizer)
+        return StoriesSight(self, tokenizer=self.tokenizer)
     
     @property
     def vocab(self):
@@ -315,7 +310,7 @@ class Transformer(PreTrainedModel):
     def collator(self, **kwargs):
         return DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
     
-    def fit(self, log=True, lr=1e-3, wd=0.05, batch_size=128, epochs=1, eval_steps=10_000, **kwargs):
+    def fit(self, log=True, lr=1e-3, wd=0.2, batch_size=128, epochs=1, eval_steps=10_000, **kwargs):
         dataset = self.dataset(tokenized=True)
         train, validation = dataset["train"], dataset["validation"]
         
