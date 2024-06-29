@@ -42,24 +42,18 @@ class Eigen:
         elif not isinstance(index, tuple):
             raise TypeError(f"Index must be an int or a tuple, not {type(index)}")
         
-        l, r = self.b[-1].unbind()
-        q = einsum(self.u[index[0]], l, r, "out, out in1, out in2 -> in1 in2")
-        q = 0.5 * (q + q.mT)
+        assert len(index) == self.b.size(0), "Index must have same size as model depth"
+
+        for i in range(0, len(index)):
+            out = self.u[index[0]] if i == 0 else vecs[:, index[i]]
+            
+            l, r = self.b[-(i+1)].unbind()
+            q = einsum(out, l, r, "out, out in1, out in2 -> in1 in2")
+            q = 0.5 * (q + q.mT)
+            
+            vals, vecs = torch.linalg.eigh(q)
         
-        vals, vecs = torch.linalg.eigh(q)
         vecs = einsum(vecs, self.e, "emb batch, emb inp -> batch inp")
-        
-        if len(index) == 1:
-            return vals, vecs
-        
-        l, r = self.b[-2].unbind()
-        q = einsum(vecs[:, index[1]], l, r, "out, out in1, out in2 -> in1 in2")
-        q = 0.5 * (q + q.mT)
-        
-        vals, vecs = torch.linalg.eigh(q)
-        vecs = einsum(vecs, self.e, "emb batch, emb inp -> batch inp")
-        
-        # Currently, only 2 layers are supported
         return vals, vecs
     
 

@@ -16,7 +16,7 @@ color = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0.0)
 # %%
 # Extremely high noise seems to produce interpretable results and achieve respectable accuracy, what do the images look like?
 train, test = SMNIST(train=True), SMNIST(train=False)
-noise = Noise(scale=2.0, kind='perlin')
+noise = Noise(scale=2.0)
 px.imshow(noise(train.x)[:5].view(-1, 28, 28).cpu(), facet_col=0, **color)
 
 # %%
@@ -37,10 +37,10 @@ df["val/err"] = 1 - df["val/acc"]
 px.line(df, x="noise", y=["train/err", "val/err"], title="Error", log_y=True, labels=dict(value="error")).update_layout(title_x=0.5)
 # %%
 
-model = Model.from_config(epochs=100, wd=0.5, input_noise=2.0, n_layer=1).cuda()
+model = Model.from_config(epochs=30, wd=0.5, input_noise=0.0, n_layer=1).cuda()
 metrics = model.fit(train, test)
 # %%
-vals, vecs = model.eigen[2]
+vals, vecs = model.eigen[3]
 px.imshow(vecs[-5:].view(-1, 28, 28).cpu(), facet_col=0, **color)
 # %%
 # %%

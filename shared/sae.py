@@ -192,7 +192,7 @@ class SAE(PreTrainedModel):
         x_hat, x_hid = self(x.detach())
         metrics = self.metrics(x, x_hid, x_hat)
         return metrics["mse"], metrics
-        
+    
     def _e2e_step(self, sight, batch):
         """Sample and patch in the reconstruction, retuning the global loss"""
         with sight.trace(batch, validate=False, scan=False):
@@ -243,4 +243,4 @@ class SAE(PreTrainedModel):
             pbar.set_description(f"loss: {loss:.4f}, L1: {metrics['l1'].item():.4f}")
         
         # TODO: perform validation once in a while, this should use _e2e_step for CE loss.
-            
+        

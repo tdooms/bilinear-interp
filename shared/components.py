@@ -79,7 +79,7 @@ class Linear(nn.Linear):
     """A linear layer with optional gate and noise"""
     def __init__(self, d_in: int, d_out: int, bias=False, gate=False, noise=None) -> None:
         super().__init__(d_in, d_out, bias=bias)
-        self.noise = Noise(scale=noise, kind="perlin") if noise else nn.Identity()
+        self.noise = Noise(scale=noise) if noise else nn.Identity()
         self.gate = nn.ReLU() if gate else nn.Identity()
     
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
