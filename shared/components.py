@@ -67,12 +67,20 @@ class Bilinear(nn.Linear):
         return self.gate(left) * right
     
     @property
-    def l(self):
+    def w_l(self):
         return self.weight.chunk(2, dim=-1)[0]
     
     @property
-    def r(self):
+    def w_r(self):
         return self.weight.chunk(2, dim=-1)[1]
+    
+    @property
+    def b_l(self):
+        return self.bias.chunk(2, dim=-1)[0]
+    
+    @property
+    def b_r(self):
+        return self.bias.chunk(2, dim=-1)[1] 
 
 
 class Linear(nn.Linear):
