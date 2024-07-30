@@ -9,6 +9,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import wandb
 from shared.components import Bilinear
+import gc
 
 Point = namedtuple('Point', ['name', 'layer'])
 
@@ -19,6 +20,7 @@ class SAEConfig(PretrainedConfig):
         target: Point | None = None,    # Point at which to reconstruct in the model
         loss: str = 'mse',              # Loss function to use (mse/e2e/e2e+ds/...)
         lr: float = 1e-4,               # Learning rate
+        batch_size: int = 32,           # Batch size
         d_model: int | None = None,     # Model dimension
         n_ctx: int = 256,               # Context length
         expansion: int = 4,             # SAE expansion factor
@@ -30,6 +32,7 @@ class SAEConfig(PretrainedConfig):
         bilinear: bool = False,         # Whether to use a bilinear encoder
         token_lookup: bool = False,     # Whether to use a token lookup table
         decoder_decay: float = 0.0,     # Decoder weight decay factor
+        batches: int | None = None,     # Number of batches to train on
         modifier: str | None = None,    # A modifier for the model name
         device: str = "cuda",           # Device to run the model on
         **kwargs
@@ -44,6 +47,7 @@ class SAEConfig(PretrainedConfig):
         self.target = Point(*target) if isinstance(target, list) or isinstance(target, tuple) else target
         self.loss = loss
         self.lr = lr
+        self.batch_size = batch_size
         
         # Model related parameters
         self.d_model = d_model
@@ -70,6 +74,7 @@ class SAEConfig(PretrainedConfig):
         self.decoder_decay = decoder_decay
         
         # Miscellaneous parameters
+        self.batches = batches
         self.modifier = modifier
         
         super().__init__(**kwargs)
@@ -97,7 +102,7 @@ class SAE(PreTrainedModel):
             self.w_enc = Bilinear(self.d_model, self.d_hidden, bias=True)
         else:
             self.w_enc = nn.Linear(self.d_model, self.d_hidden, bias=True)
-            self.w_enc.weight.data = config.init_scale * self.w_dec.weight.data.T.clone()
+            # self.w_enc.weight.data = config.init_scale * self.w_dec.weight.data.T.clone()
         
         self.b_dec = nn.Parameter(torch.zeros(self.d_model, device=device))
         self.register_parameter('b_dec', self.b_dec)
@@ -194,17 +199,21 @@ class SAE(PreTrainedModel):
         
         x_hat, x_hid = self(x)
         
-        with sight.trace(batch, validate=False, scan=False):
+        with torch.no_grad(), sight.trace(batch, validate=False, scan=False):
             sight[self.target][:] = x_hat
             loss = sight.output.loss.save()
+        
+        with torch.no_grad(), sight.trace(batch, validate=False, scan=False):
+            sight[self.target][:] = 0
+            corrupt = sight.output.loss.save()
             
         metrics = self.metrics(x, x_hid, x_hat)
-        return clean, loss, metrics
+        return clean, corrupt, loss, metrics
     
     def fit(self, sight, train, validate, log=True):
         """A general fit function with a default training loop"""
         if log: wandb.init(project="story_sae")
-        loader = DataLoader(train, batch_size=128, shuffle=False)
+        loader = DataLoader(train, batch_size=self.config.batch_size, shuffle=False)
         
         # Select the step function based on the loss
         step = dict(
@@ -218,13 +227,15 @@ class SAE(PreTrainedModel):
             dict(params=self.w_dec.parameters(), weight_decay=self.config.decoder_decay)
         ]
         
-        # Note that we do not need to care about constraining the decoder
-        optimizer = Adam(parameters, lr=self.config.lr)
-        scheduler = CosineAnnealingLR(optimizer, len(loader), 1e-5)
+        total = self.config.batches if self.config.batches is not None else len(loader)
         
-        pbar = tqdm(loader)
+        # Note that we do not need to care about constraining the decoder norm
+        optimizer = Adam(parameters, lr=self.config.lr)
+        scheduler = CosineAnnealingLR(optimizer, total, 2e-5)
+        
+        pbar = tqdm(zip(range(total), loader), total=total)
         added = float("nan")
-        for idx, batch in enumerate(pbar):
+        for idx, batch in pbar:
             loss, metrics = step(sight, batch)
             
             optimizer.zero_grad()
@@ -232,12 +243,17 @@ class SAE(PreTrainedModel):
             optimizer.step()
             scheduler.step()
             
-            if validate and idx % self.config.val_steps == 0:
-                clean, loss, _ = self._e2e_step(sight, validate)
-                metrics['val/added'] = (loss.item() / clean.item()) - 1
-                added = metrics['val/added']
+            if validate is not None and idx % self.config.val_steps == 0:
+                clean, corrupt, loss, _ = self._e2e_step(sight, validate)
+                added = (loss.item() - clean.item()) / clean.item()
+                metrics['val/added'] = added
+                metrics['val/loss'] = loss.item()
+                metrics['val/recovered'] = 1 - ((loss.item() - clean.item()) / (corrupt.item() - clean.item()))
             
             pbar.set_description(f"L1: {metrics['l1']:.4f}, NMSE: {metrics['nmse']:.4f}, added: {added:.4f}")
+            
+            gc.collect()
+            torch.cuda.empty_cache()
                         
             if log: wandb.log(metrics)
         if log: wandb.finish()
