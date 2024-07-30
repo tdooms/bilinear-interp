@@ -13,7 +13,7 @@ color = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0.0)
 torch.set_grad_enabled(True)
 
 # The input norm is about 0.3, so we scale the input noise to 1.0, same as the previous implementation
-model = Model.from_config(epochs=30, wd=0.5, noise=3.0, n_layer=1).cuda()
+model = Model.from_config(epochs=30, wd=0.5, noise=3.0, n_layer=1, residual=True).cuda()
 
 train, test = MNIST(train=True), MNIST(train=False)
 metrics = model.fit(train, test)

@@ -85,6 +85,14 @@ class Model(PreTrainedModel):
     def w_b(self):
         return torch.stack([rearrange(layer.weight.data, "(s o) h -> s o h", s=2) for layer in self.blocks])
     
+    @property
+    def w_l(self):
+        return self.w_b.unbind(1)[0]
+    
+    @property
+    def w_r(self):
+        return self.w_b.unbind(1)[1]
+    
     @classmethod
     def from_config(cls, *args, **kwargs):
         return cls(Config(*args, **kwargs))
