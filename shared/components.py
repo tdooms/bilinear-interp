@@ -88,7 +88,7 @@ class Norm(nn.Module):
         super().__init__()
         
         self.norm = RMSNorm(d_model, bias) if normalization else nn.Identity()
-        self.noise = Noise(noise)
+        self.noise = Noise(noise) if noise else nn.Identity()
         
     def forward(self, x):
         return self.noise(self.norm(x))

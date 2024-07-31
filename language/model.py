@@ -28,6 +28,7 @@ class Config(PretrainedConfig):
         d_hidden: int = 4 * 4 * 64,
         bilinear: bool = True,
         gate: bool = False,
+        bias: bool = False,
         normalization: bool = True,
         modifier: str | None = None,
         noise: float | None = None,
@@ -42,6 +43,7 @@ class Config(PretrainedConfig):
         
         self.bilinear = bilinear
         self.gate = gate
+        self.bias= bias
         self.normalization = normalization
         self.noise = noise
         
@@ -64,6 +66,14 @@ def rotate_half(x):
 def apply_rotary_pos_emb(q, k, cos, sin):
     return (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
 
+def gpt2_init(module):
+    if isinstance(module, nn.Linear):
+        torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        if module.bias is not None:
+            torch.nn.init.zeros_(module.bias)
+    elif isinstance(module, nn.Embedding):
+        torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            
 
 class Rotary(torch.nn.Module):
     def __init__(self, dim: int, base: int = 10000):
@@ -129,7 +139,7 @@ class Layer(nn.Module):
         super().__init__()
         
         self.attn = Attention(config)
-        self.mlp = MLP(config.d_model, config.d_hidden, bilinear=config.bilinear, gate=config.gate)
+        self.mlp = MLP(config.d_model, config.d_hidden, bilinear=config.bilinear, gate=config.gate, bias=config.bias)
         
         self.n1 = Norm(config.d_model, config.normalization, config.noise)
         self.n2 = Norm(config.d_model, config.normalization, config.noise)
@@ -157,15 +167,7 @@ class Transformer(PreTrainedModel):
         self.lm_head = nn.Linear(config.d_model, config.n_vocab, bias=False)
         self.criterion = nn.CrossEntropyLoss()
         
-        self.apply(self._init_weights)
-
-    def _init_weights(self, module):
-        if isinstance(module, nn.Linear):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        self.apply(gpt2_init)
         
     def forward(self, input_ids=None, labels=None, **kwargs):
         x = self.transformer.wte(input_ids)
