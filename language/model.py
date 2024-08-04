@@ -66,6 +66,7 @@ def rotate_half(x):
 def apply_rotary_pos_emb(q, k, cos, sin):
     return (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
 
+
 def gpt2_init(module):
     if isinstance(module, nn.Linear):
         torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
@@ -312,7 +313,7 @@ class Transformer(PreTrainedModel):
     def collator(self, **kwargs):
         return DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
     
-    def fit(self, log=True, lr=1e-3, wd=0.2, batch_size=128, epochs=1, eval_steps=10_000, **kwargs):
+    def fit(self, project="stories", lr=1e-3, wd=0.2, batch_size=128, epochs=1, eval_steps=10_000, callbacks=None, **kwargs):
         dataset = self.dataset(tokenized=True)
         train, validation = dataset["train"], dataset["validation"]
         
@@ -320,6 +321,7 @@ class Transformer(PreTrainedModel):
             # use_cpu=True,
             output_dir="_checkpoints",
             learning_rate=lr,
+            logging_steps=100,
             per_device_train_batch_size=batch_size,
             per_device_eval_batch_size=batch_size,
             num_train_epochs=epochs,
@@ -327,7 +329,7 @@ class Transformer(PreTrainedModel):
             do_eval=True,
             evaluation_strategy="steps",
             eval_steps=eval_steps,
-            report_to="wandb" if log else None,
+            report_to="wandb" if project else "none",
             remove_unused_columns=False,
             **kwargs
         )
@@ -339,11 +341,12 @@ class Transformer(PreTrainedModel):
             eval_dataset=validation,
             tokenizer=self.tokenizer,
             data_collator=self.collator,
+            callbacks=callbacks,
         )
         
-        if log: wandb.init(project="stories", config=self.config)
+        if project: wandb.init(project=project, config=self.config)
         trainer.train()
-        if log: wandb.finish()
+        if project: wandb.finish()
         
         return trainer
 

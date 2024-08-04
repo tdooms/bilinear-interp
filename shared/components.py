@@ -70,16 +70,30 @@ class MLP(nn.Module):
         return self.o(self.w(x))
     
 
+# class RMSNorm(nn.Module):
+#     """PyTorch doesn't yet have RMSNorm implemented, this is the canonical implementation"""
+#     def __init__(self, dims, bias=False):
+#         super().__init__()
+#         self.weight = nn.Parameter(torch.ones(dims))
+#         self.bias = nn.Parameter(torch.zeros(dims)) if bias else None
+#         self.eps = 1e-8
+    
+#     def forward(self, x):
+#         return x * torch.rsqrt(torch.mean(x.pow(2), dim=-1, keepdim=True) + self.eps) * self.weight + (0 if self.bias is None else self.bias)
+    
 class RMSNorm(nn.Module):
     """PyTorch doesn't yet have RMSNorm implemented, this is the canonical implementation"""
     def __init__(self, dims, bias=False):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dims))
         self.bias = nn.Parameter(torch.zeros(dims)) if bias else None
+
         self.eps = 1e-8
+        self.alpha = 0.0
     
     def forward(self, x):
-        return x * torch.rsqrt(torch.mean(x.pow(2), dim=-1, keepdim=True) + self.eps) * self.weight + (0 if self.bias is None else self.bias)
+        scaled = x * torch.rsqrt(torch.mean(x.pow(2), dim=-1, keepdim=True) + self.eps) * self.weight + (0 if self.bias is None else self.bias)
+        return (1.0 - self.alpha) * scaled + x * self.alpha
 
 
 class Norm(nn.Module):
