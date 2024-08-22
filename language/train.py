@@ -7,19 +7,17 @@ from language import Transformer
 # %%
 
 model = Transformer.from_config(
-    n_layer=1,
-    d_model=1024,
-    d_hidden=1024*3,
-    normalization=None,
+    n_layer=6,
+    d_model=512,
+    d_hidden=512*3,
+    # normalization=None,
     n_head=8,
-    noise=0.33,
+    # noise=0.33,
 )
 
 model.summary()
 # %%
-
-model.fit(log=False, epochs=5, wd=1, batch_size=128)
-
+model.fit(project=None, epochs=1, wd=0.1, batch_size=128)
 # %%
 
 model.push_to_hub(f"TinyStories-1-1024-i5n")
@@ -37,7 +35,7 @@ model.generate("Once upon a time, ", max_length=100)
 # %%
 
 
-model = Transformer.from_config(n_layer=1, d_model=256).eval().half()
+model = Transformer.from_config(n_layer=6, d_model=512).eval().half()
 sight = model.sight
 
 with sight.trace("once upon a time", validate=False, scan=False):

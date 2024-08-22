@@ -2,7 +2,7 @@
 %load_ext autoreload
 %autoreload 2
 
-from tasks.model import Transformer
+from tasks.transformer import Transformer
 from tasks.datasets import scasper
 import plotly.express as px
 import torch

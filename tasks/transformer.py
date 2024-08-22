@@ -31,11 +31,8 @@ class Transformer(PreTrainedModel):
     
         logits = self.lm_head(x[:, -1])
         
-        if labels is None:
-            return CausalLMOutput(logits=logits)
-        else:
-            loss = self.criterion(logits, labels)
-            return CausalLMOutput(loss=loss, logits=logits)
+        loss = self.criterion(logits, labels) if labels is not None else None
+        return CausalLMOutput(loss=loss, logits=logits)
     
     @property
     def w_qkv(self):
@@ -115,30 +112,4 @@ class Transformer(PreTrainedModel):
         config = Config.from_pretrained(name)
         return super(Transformer, Transformer).from_pretrained(name, config=config, device_map=device, **kwargs)
     
-    def fit(self, train, val, lr=1e-3, wd=0.1, epochs=5, **kwargs):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=lr, weight_decay=wd)
-        accuracy = lambda logits, labels: torch.sum(torch.argmax(logits, dim=-1) == labels).item() / labels.size(0)
-        
-        wandb.init(project="modulo", config=self.config)
-        
-        pbar = tqdm(range(epochs))
-        for i in pbar:
-            optimizer.zero_grad()
-            output = self(train.input_ids, train.labels)
-            output.loss.backward()
-            optimizer.step()
-            
-            metrics = {
-                "train/loss": output.loss.item(),
-                "train/accuracy": accuracy(output.logits, train.labels),
-            }
-            pbar.set_description(f"Loss: {metrics['train/loss']:.2f}, Accuracy: {metrics['train/accuracy']:.2%}")
-            
-            if i % 100 == 0:
-                output = self(val.input_ids, val.labels)
-                metrics["val/loss"] = output.loss.item()
-                metrics["val/accuracy"] = accuracy(output.logits, val.labels)
-            
-            wandb.log(metrics)
-        
-        wandb.finish()
+
