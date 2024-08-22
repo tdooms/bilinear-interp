@@ -9,18 +9,19 @@ from language import Transformer
 model = Transformer.from_config(
     n_layer=6,
     d_model=512,
-    d_hidden=512*3,
-    # normalization=None,
+    d_hidden=512*4,
     n_head=8,
-    # noise=0.33,
+    gate="silu",
 )
 
 model.summary()
 # %%
-model.fit(project=None, epochs=1, wd=0.1, batch_size=128)
+model
+# %%
+model.fit(project="stories", epochs=1, wd=0.1, batch_size=128)
 # %%
 
-model.push_to_hub(f"TinyStories-1-1024-i5n")
+model.push_to_hub(f"ts-l6-d512-e1-s")
 
 # %%
 
@@ -51,3 +52,24 @@ print(scores.shape)
 # import torch
 
 # normalization(model.config).forward(torch.randn(1, 100, 256))
+
+# %%
+
+model = Transformer.from_config(
+    n_layer=6,
+    d_model=512,
+    d_hidden=512*4,
+    n_head=8,
+)
+model.fit(project="stories", epochs=1, wd=0.1, batch_size=128)
+model.push_to_hub(f"ts-l6-d512-e1-b")
+# %%
+model = Transformer.from_config(
+    n_layer=6,
+    d_model=512,
+    d_hidden=512*4,
+    n_head=8,
+    gate="relu",
+)
+model.fit(project="stories", epochs=1, wd=0.1, batch_size=128)
+model.push_to_hub(f"ts-l6-d512-e1-r")

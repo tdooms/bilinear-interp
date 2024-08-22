@@ -21,10 +21,10 @@ class Noise(nn.Module):
 
 class Bilinear(nn.Linear):
     """A bilinear layer with optional gate and noise"""
-    def __init__(self, d_in: int, d_out: int, bias=False, gate=False, noise=None) -> None:
+    def __init__(self, d_in: int, d_out: int, bias=False, gate=None, noise=None) -> None:
         super().__init__(d_in, 2 * d_out, bias=bias)
         self.noise = Noise(scale=noise) if noise else nn.Identity()
-        self.gate = nn.ReLU() if gate else nn.Identity()
+        self.gate = dict(relu=nn.ReLU(), silu=nn.SiLU(), gelu=nn.GELU())[gate] if gate else nn.Identity()
     
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
         left, right = super().forward(self.noise(x)).chunk(2, dim=-1)
@@ -49,10 +49,10 @@ class Bilinear(nn.Linear):
 
 class Linear(nn.Linear):
     """A linear layer with optional gate and noise"""
-    def __init__(self, d_in: int, d_out: int, bias=False, gate=False, noise=None) -> None:
+    def __init__(self, d_in: int, d_out: int, bias=False, gate=None, noise=None) -> None:
         super().__init__(d_in, d_out, bias=bias)
         self.noise = Noise(scale=noise) if noise else nn.Identity()
-        self.gate = nn.ReLU() if gate else nn.Identity()
+        self.gate = dict(relu=nn.ReLU(), silu=nn.SiLU(), gelu=nn.GELU())[gate] if gate else nn.Identity()
     
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
         return self.gate(super().forward(self.noise(x)))
@@ -60,47 +60,45 @@ class Linear(nn.Linear):
 
 class MLP(nn.Module):
     """A general MLP implementation supporting bilinear, gated and ReLU activations"""
-    def __init__(self, d_model: int, d_hidden: int, bias=False, bilinear=True, gate=False) -> None:
+    def __init__(self, d_model: int, d_hidden: int, bias=False, bilinear=True, gate=None) -> None:
         super().__init__()
 
         self.w = (Bilinear if bilinear else Linear)(d_model, d_hidden, bias=bias, gate=gate)
-        self.o = nn.Linear(d_hidden, d_model, bias=bias) # should rename this to p
+        self.p = nn.Linear(d_hidden, d_model, bias=bias)
     
     def forward(self, x: Float[Tensor, "... d_model"]) -> Float[Tensor, "... d_model"]:
-        return self.o(self.w(x))
+        return self.p(self.w(x))
     
 
-# class RMSNorm(nn.Module):
-#     """PyTorch doesn't yet have RMSNorm implemented, this is the canonical implementation"""
-#     def __init__(self, dims, bias=False):
-#         super().__init__()
-#         self.weight = nn.Parameter(torch.ones(dims))
-#         self.bias = nn.Parameter(torch.zeros(dims)) if bias else None
-#         self.eps = 1e-8
-    
-#     def forward(self, x):
-#         return x * torch.rsqrt(torch.mean(x.pow(2), dim=-1, keepdim=True) + self.eps) * self.weight + (0 if self.bias is None else self.bias)
-    
 class RMSNorm(nn.Module):
     """PyTorch doesn't yet have RMSNorm implemented, this is the canonical implementation"""
-    def __init__(self, dims):
+    def __init__(self):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(dims))
-
         self.eps = 1e-8
-        self.alpha = 0.0
     
     def forward(self, x):
-        scaled = x * torch.rsqrt(torch.mean(x.pow(2), dim=-1, keepdim=True) + self.eps) * self.weight
-        return (1.0 - self.alpha) * scaled + x * self.alpha
+        return x * torch.rsqrt(torch.mean(x.pow(2), dim=-1, keepdim=True) + self.eps)
+    
+# class RMSNorm(nn.Module):
+#     """PyTorch doesn't yet have RMSNorm implemented, this is the canonical implementation"""
+#     def __init__(self, dims):
+#         super().__init__()
+#         self.weight = nn.Parameter(torch.ones(dims))
+
+#         self.eps = 1e-8
+#         self.alpha = 0.0
+    
+#     def forward(self, x):
+#         scaled = x * torch.rsqrt(torch.mean(x.pow(2), dim=-1, keepdim=True) + self.eps) * self.weight
+#         return (1.0 - self.alpha) * scaled + x * self.alpha
 
 
 class Norm(nn.Module):
     """A multi-function normalization layer with noise and bias options"""
-    def __init__(self, d_model, normalization, noise, bias=False):
+    def __init__(self, normalization, noise):
         super().__init__()
         
-        self.norm = RMSNorm(d_model) if normalization else nn.Identity()
+        self.norm = RMSNorm() if normalization else nn.Identity()
         self.noise = Noise(noise) if noise else nn.Identity()
         
     def forward(self, x):

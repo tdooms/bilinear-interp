@@ -141,8 +141,8 @@ class Layer(nn.Module):
         self.attn = Attention(config)
         self.mlp = MLP(config.d_model, config.d_hidden, bilinear=config.bilinear, gate=config.gate, bias=config.bias)
         
-        self.n1 = Norm(config.d_model, config.normalization, config.noise)
-        self.n2 = Norm(config.d_model, config.normalization, config.noise)
+        self.n1 = Norm(config.normalization, config.noise)
+        self.n2 = Norm(config.normalization, config.noise)
     
     def forward(self, x):
         x = x + self.attn(self.n1(x))
@@ -161,7 +161,7 @@ class Transformer(PreTrainedModel):
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.n_vocab, config.d_model),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
-            n_f = Norm(config.d_model, config.normalization, config.noise)
+            n_f = Norm(config.normalization, config.noise)
         ))
         
         self.lm_head = nn.Linear(config.d_model, config.n_vocab, bias=False)
@@ -403,7 +403,7 @@ class Transformer(PreTrainedModel):
             self.transformer.h[0].attn.qkv.weight.numel(),
             self.transformer.h[0].attn.o.weight.numel(),
             self.transformer.h[0].mlp.w.weight.numel(),
-            self.transformer.h[0].mlp.o.weight.numel()
+            self.transformer.h[0].mlp.p.weight.numel()
         ]
         
         dims = [
