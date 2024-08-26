@@ -58,7 +58,7 @@ class Group:
         Compute the multiplication table of the group. Caches/loads from file if possible.
         """
         print('Computing multiplication table...')
-        filename = f'utils/cache/{self.acronym}{self.index}/{self.acronym}{self.index}_mult_table.pt'
+        filename = f'data/cache/{self.acronym}{self.index}/{self.acronym}{self.index}_mult_table.pt'
 
         # check if the directory exists, if not create it
         if not os.path.exists(os.path.dirname(filename)):

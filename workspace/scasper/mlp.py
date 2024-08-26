@@ -2,66 +2,7 @@
 %load_ext autoreload
 %autoreload 2
 
-from transformers.modeling_outputs import CausalLMOutput
 
-from torch import nn
-import torch
-from shared.components import Bilinear
-from tasks.utils import fullbatch_fit
-from tasks.datasets import Dataset, split, scasper
-from transformers import PreTrainedModel, PretrainedConfig
-
-class Config(PretrainedConfig):
-    def __init__(
-        self,
-        n_classes=114,
-        d_model=256,
-        **kwargs
-    ):
-        self.n_classes = n_classes
-        self.d_model = d_model
-        
-        super().__init__(**kwargs)
-    
-
-class Model(PreTrainedModel):
-    def __init__(self, config) -> None:
-        super().__init__(config)
-        self.config = config
-        
-        self.left = nn.Embedding(config.n_classes, config.d_model)
-        self.right = nn.Embedding(config.n_classes, config.d_model)
-        
-        self.bilinear = Bilinear(2 * config.d_model, config.d_model)
-        self.unembed = nn.Linear(config.d_model, config.n_classes, bias=False)
-        
-        self.criterion = nn.CrossEntropyLoss()
-        self.accuracy = lambda y_hat, y: (y_hat.argmax(dim=-1) == y).float().mean()
-    
-    def forward(self, x, y=None):
-        left = self.left(x[:, 0])
-        right = self.right(x[:, 1])
-        x = torch.cat([left, right], dim=-1)
-        
-        x = self.bilinear(x)
-        logits = self.unembed(x)
-        
-        loss = self.criterion(logits, y) if y is not None else None
-        return CausalLMOutput(loss=loss, logits=logits)
-    
-    @classmethod
-    def from_pretrained(cls, task, params, device='cuda', **kwargs):
-        params = "-".join([f"{k}{v}" for k, v in params.items()])
-        name = f"tdooms/{task}-{params}"
-        
-        config = Config.from_pretrained(name)
-        return super(cls, cls).from_pretrained(name, config=config, device_map=device, **kwargs)
-    
-    def fit(self, epochs=50_000, project=None, seed=42):
-        dataset = scasper()
-        train, val = split(dataset)
-
-        fullbatch_fit(self, train, val, epochs=epochs, project=project, seed=seed)
 
 # %%
 torch.set_grad_enabled(True)

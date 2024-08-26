@@ -5,6 +5,7 @@ import wandb
 
 
 def fullbatch_fit(model, train, val, lr=1e-3, wd=0.1, epochs=5, project=None, seed=42, **kwargs):
+    """Performing full-batch optimization is both faster and better towards grokking."""
     torch.manual_seed(seed)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
     # optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
@@ -25,7 +26,7 @@ def fullbatch_fit(model, train, val, lr=1e-3, wd=0.1, epochs=5, project=None, se
             "train/loss": output.loss.item(),
             "train/accuracy": accuracy(output.logits, train.labels),
         }
-        pbar.set_description(f"Loss: {metrics['train/loss']:.2f}, Accuracy: {val_acc:.2%}")
+        pbar.set_description(f"train/loss: {metrics['train/loss']:.2f}, val/accuracy: {val_acc:.2%}")
         
         if i % 100 == 0:
             output = model(val.input_ids, val.labels)
@@ -37,3 +38,21 @@ def fullbatch_fit(model, train, val, lr=1e-3, wd=0.1, epochs=5, project=None, se
         if project: wandb.log(metrics)
     
     if project: wandb.finish()
+
+
+def make_fourier_basis(p: int, device="cuda"):
+    fourier_basis = torch.ones(p, p, device=device)
+    
+    for i in range(1, p // 2):
+        fourier_basis[2*i-1] = torch.cos(2*torch.pi*torch.arange(p)*i/p)
+        fourier_basis[2*i] = torch.sin(2*torch.pi*torch.arange(p)*i/p)
+    
+    if p % 2 == 0:
+        fourier_basis[-1] = torch.cos(2*torch.pi*torch.arange(p))
+
+    fourier_basis /= fourier_basis.norm(dim=1, keepdim=True)
+    return fourier_basis
+
+def to_fourier_basis(x):
+    basis = make_fourier_basis(x.size(-1), device=x.device)
+    return x @ basis.T

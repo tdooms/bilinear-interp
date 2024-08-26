@@ -2,7 +2,7 @@
 %load_ext autoreload
 %autoreload 2
 
-from workspace.sngrok.groups import SymmetricGroup
+from tasks.groups import SymmetricGroup
 from transformers.modeling_outputs import CausalLMOutput
 
 from torch import nn
