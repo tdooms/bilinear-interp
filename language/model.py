@@ -215,11 +215,8 @@ class Transformer(PreTrainedModel):
         return Transformer(config)
         
     @classmethod
-    def from_pretrained(cls, n_layer=1, d_model=512, modifier=None, device='cuda', **kwargs):
-        url = "tdooms/TinyStories"
-        name = f"{url}-{n_layer}-{d_model}"
-        if modifier is not None: name += f"-{modifier}"
-        
+    def from_pretrained(cls, n_layer=1, d_model=512, epochs=1, modifier=None, device='cuda', **kwargs):
+        name = f"tdooms/ts-l{n_layer}-d{d_model}-e{epochs}-{modifier}"
         config = Config.from_pretrained(name)
         return super(Transformer, Transformer).from_pretrained(name, config=config, device_map=device, **kwargs)
     
@@ -320,7 +317,7 @@ class Transformer(PreTrainedModel):
             # use_cpu=True,
             output_dir="_checkpoints",
             learning_rate=lr,
-            logging_steps=100,
+            logging_steps=10,
             per_device_train_batch_size=batch_size,
             per_device_eval_batch_size=batch_size,
             num_train_epochs=epochs,

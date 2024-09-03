@@ -30,7 +30,7 @@ iter = iter(loader)
 #         out2 = [sight.transformer.h[i].n1.output.save() for i in range(6)]
 #     break
 
-def sample_inout(steps=16):
+def sample_inout(layer, steps=16):
     a = torch.empty(steps, 512, 256, 512)
     b = torch.empty(steps, 512, 256, 512)
 

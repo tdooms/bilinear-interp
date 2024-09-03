@@ -10,9 +10,61 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 import wandb
 from shared.components import Bilinear
 import gc
+from torch.utils.data import Dataset
 
 Point = namedtuple('Point', ['name', 'layer'])
 
+
+class ActivationDataset(Dataset):
+    """This class is a dynamic dataset that samples activations from a model on the fly."""
+    def __init__(self, config, sight, dataset):
+        self.config = config
+        self.sight = sight
+        
+        self.n_ctx = config.n_ctx
+        self.n_tokens = config.n_tokens
+
+        assert config.buffer_size % (config.in_batch * self.n_ctx) == 0, "samples must be a multiple of loader batch size"
+        self.n_inputs = config.buffer_size // (config.in_batch * self.n_ctx)
+
+        # This is somewhat of a hack but using the iter object retains the state throughout for loops.
+        # If we were to use the dataloader immediately, it would sample the same data over and over.
+        self.loader = DataLoader(dataset, batch_size=config.in_batch)
+        self.iter = iter(self.loader)
+        
+        self.start, self.end = 0, 0
+    
+    @torch.no_grad()
+    def collect(self):
+        activations = []
+        
+        for _, batch in zip(range(self.n_inputs), self.iter):
+            inputs = batch["input_ids"][..., :self.n_ctx]
+            activations.append(self.extract(inputs))
+        
+        self.activations = rearrange(torch.cat(activations, dim=0), "... d_model -> (...) d_model")
+
+        # This shouldn't be necessary but I often run into memory issues if I'm not pedantic about this
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    @torch.no_grad()
+    def extract(self, batch):
+        with torch.no_grad(), self.sight.trace(batch, validate=False, scan=False):
+            return self.sight[self.config.point].save()
+            
+    def __len__(self):
+        return self.n_tokens
+    
+    def __getitem__(self, idx):
+        """This function assumes sequential access (aka non-shuffled dataloaders). The shuffling is done automatically."""
+        if idx >= self.end:
+            self.collect()
+            self.start = self.end
+            self.end += len(self.activations)
+        
+        return self.activations[idx - self.start]
+    
 class SAEConfig(PretrainedConfig):
     def __init__(
         self,
@@ -20,12 +72,13 @@ class SAEConfig(PretrainedConfig):
         target: Point | None = None,    # Point at which to reconstruct in the model
         loss: str = 'mse',              # Loss function to use (mse/e2e/e2e+ds/...)
         lr: float = 1e-4,               # Learning rate
-        batch_size: int = 32,           # Batch size
+        in_batch: int = 32,         # batch size for the transformer
+        out_batch: int = 4096,      # batch size for the SAE
         d_model: int | None = None,     # Model dimension
         n_ctx: int = 256,               # Context length
         expansion: int = 4,             # SAE expansion factor
         k: int = 16,                    # Top-k sparsity, no other sparsity is supported
-        val_steps: int = 100,          # Validation interval
+        val_steps: int = 100,           # Validation interval
         dead_thresh: int = 2,           # Steps before a neuron is considered dead
         normalize: float | None = None, # A normalization value for all inputs
         init_scale: float = 1.0,        # Encoder initialization scale
@@ -37,17 +90,19 @@ class SAEConfig(PretrainedConfig):
         device: str = "cuda",           # Device to run the model on
         **kwargs
     ):
-        assert point is not None, "A hook point must be provided"
-        assert d_model is not None, "Model dimension must be provided"
+        # assert point is not None, "A hook point must be provided"
+        # assert d_model is not None, "Model dimension must be provided"
         
-        assert loss == 'mse', "Only MSE loss is supported for now"
+        # assert loss == 'mse', "Only MSE loss is supported for now"
         
         # SAE related parameters
         self.point = Point(*point) if isinstance(point, list) or isinstance(point, tuple) else point
         self.target = Point(*target) if isinstance(target, list) or isinstance(target, tuple) else target
         self.loss = loss
         self.lr = lr
-        self.batch_size = batch_size
+        
+        self.in_batch = in_batch
+        self.out_batch = out_batch
         
         # Model related parameters
         self.d_model = d_model
@@ -150,8 +205,8 @@ class SAE(PreTrainedModel):
         return f"{base}-{config.hook.point}-{config.hook.layer}-{config.expansion}x{modifier}"
     
     @classmethod
-    def from_pretrained(cls, base, expansion, hook, modifier=None, device="cuda", **kwargs):
-        path = f"tdooms/{base}-{hook.point}-{hook.layer}-{expansion}x"
+    def from_pretrained(cls, base, point, modifier=None, device="cuda", **kwargs):
+        path = f"tdooms/{base}-{point}"
         path = f"{path}-{modifier}" if modifier is not None else path
         
         config = SAEConfig.from_pretrained(path)
@@ -179,15 +234,11 @@ class SAE(PreTrainedModel):
         self.inactive += 1
         return metrics
             
-    def _reconstruct_step(self, sight, batch):
+    def _reconstruct_step(self, batch):
         """Sample and reconstruct a batch, returning the local loss"""
         
-        with torch.no_grad(), sight.trace(batch, validate=False, scan=False):
-            x = sight[self.point].save()
-            y = sight[self.target].save()
-        
-        x_hat, x_hid = self(x)
-        metrics = self.metrics(y, x_hid, x_hat)
+        x_hat, x_hid = self(batch)
+        metrics = self.metrics(batch, x_hid, x_hat)
         return metrics["mse"], metrics
     
     def _e2e_step(self, sight, batch):
@@ -210,16 +261,14 @@ class SAE(PreTrainedModel):
         metrics = self.metrics(x, x_hid, x_hat)
         return clean, corrupt, loss, metrics
     
-    def fit(self, sight, train, validate, log=True):
+    def fit(self, model, train, validate, project: str | None = None):
         """A general fit function with a default training loop"""
-        if log: wandb.init(project="story_sae")
-        loader = DataLoader(train, batch_size=self.config.batch_size, shuffle=False)
+        if project: wandb.init(project=project)
         
-        # Select the step function based on the loss
-        step = dict(
-            mse=lambda: self._reconstruct_step,
-            e2e=lambda: self._e2e_step
-        )[self.config.loss]()
+        sight = model.sight
+        
+        ds = ActivationDataset(self.config, sight, train)
+        loader = DataLoader(ds, batch_size=self.config.out_batch, drop_last=True)
         
         # This is a cool trick to have different weight decays for different parts of the model
         parameters = [
@@ -236,7 +285,7 @@ class SAE(PreTrainedModel):
         pbar = tqdm(zip(range(total), loader), total=total)
         added = float("nan")
         for idx, batch in pbar:
-            loss, metrics = step(sight, batch)
+            loss, metrics = self._reconstruct_step(batch)
             
             optimizer.zero_grad()
             loss.backward()
@@ -244,17 +293,17 @@ class SAE(PreTrainedModel):
             scheduler.step()
             
             if validate is not None and idx % self.config.val_steps == 0:
-                clean, corrupt, loss, _ = self._e2e_step(sight, validate)
-                added = (loss.item() - clean.item()) / clean.item()
+                clean, corrupt, patched, _ = self._e2e_step(sight, validate)
+                added = (patched.item() - clean.item()) / clean.item()
                 metrics['val/added'] = added
-                metrics['val/loss'] = loss.item()
-                metrics['val/recovered'] = 1 - ((loss.item() - clean.item()) / (corrupt.item() - clean.item()))
+                metrics['val/patched'] = patched.item()
+                metrics['val/recovered'] = 1 - ((patched.item() - clean.item()) / (corrupt.item() - clean.item()))
             
             pbar.set_description(f"L1: {metrics['l1']:.4f}, NMSE: {metrics['nmse']:.4f}, added: {added:.4f}")
             
             gc.collect()
             torch.cuda.empty_cache()
                         
-            if log: wandb.log(metrics)
-        if log: wandb.finish()
+            if project: wandb.log(metrics)
+        if project: wandb.finish()
             

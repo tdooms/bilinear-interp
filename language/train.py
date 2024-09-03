@@ -11,17 +11,17 @@ model = Transformer.from_config(
     d_model=512,
     d_hidden=512*4,
     n_head=8,
-    gate="silu",
+    # gate="silu",
 )
 
 model.summary()
 # %%
 model
 # %%
-model.fit(project="stories", epochs=1, wd=0.1, batch_size=128)
+model.fit(project="stories", epochs=5, wd=0.1, batch_size=128)
 # %%
 
-model.push_to_hub(f"ts-l6-d512-e1-s")
+model.push_to_hub(f"ts-l6-d512-e5")
 
 # %%
 
