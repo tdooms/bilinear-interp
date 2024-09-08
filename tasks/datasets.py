@@ -42,10 +42,10 @@ def scasper(device='cuda'):
     
     return TaskDataset(input_ids, labels)
 
-def sn5():
+def sn5(device='cuda'):
     group = SymmetricGroup(5, init_all=False)
     data, _ = group.get_all_data()
-    return TaskDataset(data[:, :-1], data[:, -1])
+    return TaskDataset(data[:, :-1].to(device), data[:, -1].to(device))
 
 
 

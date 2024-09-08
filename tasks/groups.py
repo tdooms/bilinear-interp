@@ -1,6 +1,7 @@
 import os
 import torch
 import numpy as np
+from functools import reduce
 
 from sympy.combinatorics.named_groups import SymmetricGroup as SymPySymmetricGroup
 from sympy.combinatorics import Permutation, PermutationGroup
@@ -67,7 +68,7 @@ class Group:
             print('... loading from file')
             table = torch.load(filename)
         else:
-            table = torch.zeros((self.order, self.order), dtype=torch.int64).cuda()
+            table = torch.zeros((self.order, self.order), dtype=torch.int64)
             for i in tqdm(range(self.order)):
                 for j in range(self.order):
                     table[i, j] = self.compose(i, j)
@@ -98,7 +99,7 @@ class Group:
             torch.manual_seed(shuffle_seed) 
             shuffled_indices = torch.randperm(self.order*self.order)
             data = data[shuffled_indices]
-        return data.cuda(), shuffled_indices
+        return data, shuffled_indices
     
     def get_subset_of_data(self, indices1, indices2 = 'default', shuffle_seed=False):
         """
@@ -608,7 +609,7 @@ class SymmetricGroup(Group):
         Returns:
             torch.tensor: tensor of signatures
         """
-        signatures = torch.tensor([self.signature(i) for i in range(self.order)]).cuda()
+        signatures = torch.tensor([self.signature(i) for i in range(self.order)])
         return signatures
 
 class AlternatingGroup(Group):
@@ -802,6 +803,7 @@ class AlternatingGroup(Group):
         Returns:
             torch.tensor: tensor of signatures
         """
-        signatures = torch.tensor([self.signature(i) for i in range(self.order)]).cuda()
+        signatures = torch.tensor([self.signature(i) for i in range(self.order)])
         return signatures
+
 

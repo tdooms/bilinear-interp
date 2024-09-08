@@ -4,10 +4,10 @@ import torch
 import wandb
 
 
-def fullbatch_fit(model, train, val, lr=1e-3, wd=0.1, epochs=5, project=None, seed=42, **kwargs):
+def fullbatch_fit(model, train, val, lr=1e-3, wd=0.1, epochs=5, project=None, seed=42, betas = (0.9, 0.999), **kwargs):
     """Performing full-batch optimization is both faster and better towards grokking."""
     torch.manual_seed(seed)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd, betas = betas)
     # optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
     accuracy = lambda logits, labels: torch.sum(torch.argmax(logits, dim=-1) == labels).item() / labels.size(0)
     
