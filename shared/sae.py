@@ -43,7 +43,7 @@ class ActivationDataset(Dataset):
             activations.append(self.extract(inputs))
         
         self.activations = rearrange(torch.cat(activations, dim=0), "... d_model -> (...) d_model")
-
+        
         # This shouldn't be necessary but I often run into memory issues if I'm not pedantic about this
         gc.collect()
         torch.cuda.empty_cache()
@@ -51,7 +51,8 @@ class ActivationDataset(Dataset):
     @torch.no_grad()
     def extract(self, batch):
         with torch.no_grad(), self.sight.trace(batch, validate=False, scan=False):
-            return self.sight[self.config.point].save()
+            saved = self.sight[self.config.point].save()
+        return saved
             
     def __len__(self):
         return self.n_tokens
@@ -133,6 +134,10 @@ class SAEConfig(PretrainedConfig):
         self.modifier = modifier
         
         super().__init__(**kwargs)
+    
+    @property
+    def d_features(self):
+        return self.expansion * self.d_model
 
 class SAE(PreTrainedModel):
     """And end-to-end top-k sparse autoencoder"""
@@ -145,18 +150,18 @@ class SAE(PreTrainedModel):
         self.point = config.point
         self.target = config.target if config.target is not None else config.point
         self.d_model = config.d_model
-        self.d_hidden = config.expansion * self.d_model
+        self.d_features = config.d_features
         self.n_ctx = config.n_ctx
         
-        self.inactive = torch.zeros(self.d_hidden)
+        self.inactive = torch.zeros(self.d_features)
         
-        self.w_dec = nn.Linear(self.d_hidden, self.d_model, bias=False)
+        self.w_dec = nn.Linear(self.d_features, self.d_model, bias=False)
         self.w_dec.weight.data /= torch.norm(self.w_dec.weight.data, dim=-2, keepdim=True)
         
         if config.bilinear:
-            self.w_enc = Bilinear(self.d_model, self.d_hidden, bias=True)
+            self.w_enc = Bilinear(self.d_model, self.d_features, bias=True)
         else:
-            self.w_enc = nn.Linear(self.d_model, self.d_hidden, bias=True)
+            self.w_enc = nn.Linear(self.d_model, self.d_features, bias=True)
             # self.w_enc.weight.data = config.init_scale * self.w_dec.weight.data.T.clone()
         
         self.b_dec = nn.Parameter(torch.zeros(self.d_model, device=device))
@@ -263,7 +268,7 @@ class SAE(PreTrainedModel):
     
     def fit(self, model, train, validate, project: str | None = None):
         """A general fit function with a default training loop"""
-        if project: wandb.init(project=project)
+        if project: wandb.init(project=project, config=self.config)
         
         sight = model.sight
         
@@ -284,6 +289,7 @@ class SAE(PreTrainedModel):
         
         pbar = tqdm(zip(range(total), loader), total=total)
         added = float("nan")
+
         for idx, batch in pbar:
             loss, metrics = self._reconstruct_step(batch)
             

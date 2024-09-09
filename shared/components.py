@@ -95,11 +95,9 @@ class RMSNorm(nn.Module):
 
 class Norm(nn.Module):
     """A multi-function normalization layer with noise and bias options"""
-    def __init__(self, normalization, noise):
+    def __init__(self, normalization):
         super().__init__()
-        
         self.norm = RMSNorm() if normalization else nn.Identity()
-        self.noise = Noise(noise) if noise else nn.Identity()
         
     def forward(self, x):
-        return self.noise(self.norm(x))
+        return self.norm(x)

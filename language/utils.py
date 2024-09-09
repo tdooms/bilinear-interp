@@ -148,7 +148,16 @@ class Sight(LanguageModel):
         super().__init__(*args, **kwargs)
     
     def lookup(self, layer, point):
-        raise NotImplementedError("Subclasses must implement this method.")
+        return dict(
+            resid_pre=self._envoy.transformer.h[layer].input,
+            resid_mid=self._envoy.transformer.h[layer].n2.input,
+            resid_post=self._envoy.transformer.h[layer].output,
+            mlp_in=self._envoy.transformer.h[layer].n2.output,
+            mlp_out=self._envoy.transformer.h[layer].mlp.output,
+            attn_out=self._envoy.transformer.h[layer].attn.output,
+            pattern=self._envoy.transformer.h[layer].attn.softmax.output,
+            scores=self._envoy.transformer.h[layer].attn.softmax.input[0][0],
+        )[point]
         
     def __getitem__(self, *args):
         if len(args) == 1 and isinstance(args[0], tuple):
@@ -161,19 +170,3 @@ class Sight(LanguageModel):
         
         point = point.replace("-", "_")
         return self.lookup(layer, point)
-
-class StoriesSight(Sight):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-    
-    def lookup(self, layer, point):
-        return dict(
-            resid_pre=self._envoy.transformer.h[layer].input[0][0],
-            resid_mid=self._envoy.transformer.h[layer].n2.input[0][0],
-            resid_post=self._envoy.transformer.h[layer].output,
-            mlp_in=self._envoy.transformer.h[layer].n2.output,
-            mlp_out=self._envoy.transformer.h[layer].mlp.output,
-            attn_out=self._envoy.transformer.h[layer].attn.output,
-            pattern=self._envoy.transformer.h[layer].attn.softmax.output,
-            scores=self._envoy.transformer.h[layer].attn.softmax.input[0][0],
-        )[point]

@@ -12,14 +12,13 @@ from datasets import load_dataset
 import wandb
 from transformers import TrainingArguments, Trainer
 
-from language.utils import UBE, Vocab, StoriesSight
+from language.utils import UBE, Vocab, Sight
 from shared import MLP, Norm
 
 
 class Config(PretrainedConfig):
     def __init__(
         self,
-        n_vocab: int = 4096,
         n_head: int = 4,
         n_layer: int= 4,
         n_ctx: int = 256,
@@ -29,11 +28,8 @@ class Config(PretrainedConfig):
         gate: bool = False,
         bias: bool = False,
         normalization: bool = True,
-        modifier: str | None = None,
-        noise: float | None = None,
         **kwargs
     ):
-        self.n_vocab = n_vocab
         self.n_head = n_head
         self.n_layer = n_layer
         self.n_ctx = n_ctx
@@ -42,11 +38,8 @@ class Config(PretrainedConfig):
         
         self.bilinear = bilinear
         self.gate = gate
-        self.bias= bias
+        self.bias = bias
         self.normalization = normalization
-        self.noise = noise
-        
-        self.modifier = modifier
         
         super().__init__(**kwargs)
     
@@ -73,10 +66,25 @@ def gpt2_init(module):
             torch.nn.init.zeros_(module.bias)
     elif isinstance(module, nn.Embedding):
         torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            
+
+      
+# class Rotary(torch.nn.Module):
+#     def __init__(self, dim: int, n_ctx: int, base: int = 10000):
+#         super().__init__()
+#         inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
+
+#         t = torch.arange(n_ctx).float()
+#         freqs = torch.einsum("i,j->ij", t, inv_freq)
+#         emb = torch.cat((freqs, freqs), dim=-1)
+        
+#         self.cos = emb.cos()[None, None, ...]
+#         self.sin = emb.sin()[None, None, ...]
+
+#     def forward(self, q, k):
+#         return apply_rotary_pos_emb(q, k, self.cos, self.sin)
 
 class Rotary(torch.nn.Module):
-    def __init__(self, dim: int, base: int = 10000):
+    def __init__(self, dim: int, n_ctx: int, base: int = 10000):
         super().__init__()
         inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq)
@@ -84,7 +92,7 @@ class Rotary(torch.nn.Module):
         self.cos_cached = None
         self.sin_cached = None
 
-    def forward(self, q, k, device):
+    def forward(self, q, k, device="cuda"):
         seq_len = q.size(-2)
         
         # Using isinstance does not work, this is necessary for NNSight compatibility
@@ -106,7 +114,7 @@ class Attention(nn.Module):
         super().__init__()
         self.config = config
         
-        self.rotary = Rotary(config.d_model // config.n_head)
+        self.rotary = Rotary(config.d_model // config.n_head, config.n_ctx)
         self.qkv = nn.Linear(config.d_model, 3 * config.d_model, bias=False)
         self.o = nn.Linear(config.d_model, config.d_model, bias=False)
         
@@ -118,7 +126,7 @@ class Attention(nn.Module):
         
         qkv = self.qkv(x)
         q, k, v = rearrange(qkv, 'batch seq (n n_head d_head) -> n batch n_head seq d_head', n=3, n_head=n_head).unbind(dim=0)
-        q, k = self.rotary(q, k, q.device)
+        q, k = self.rotary(q, k)
         
         if self.training:
             z = scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True)
@@ -141,8 +149,8 @@ class Layer(nn.Module):
         self.attn = Attention(config)
         self.mlp = MLP(config.d_model, config.d_hidden, bilinear=config.bilinear, gate=config.gate, bias=config.bias)
         
-        self.n1 = Norm(config.normalization, config.noise)
-        self.n2 = Norm(config.normalization, config.noise)
+        self.n1 = Norm(config.normalization)
+        self.n2 = Norm(config.normalization)
     
     def forward(self, x):
         x = x + self.attn(self.n1(x))
@@ -151,20 +159,18 @@ class Layer(nn.Module):
         
 
 class Transformer(PreTrainedModel):
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, tokenizer: AutoTokenizer):
         super().__init__(config)
         self.config = config
-        
-        self.url = "tdooms/TinyStories"
-        self.tokenizer = AutoTokenizer.from_pretrained(f"{self.url}-{config.n_vocab}", pad_token="[EOS]")
+        self.tokenizer = tokenizer
         
         self.transformer = nn.ModuleDict(dict(
-            wte = nn.Embedding(config.n_vocab, config.d_model),
+            wte = nn.Embedding(tokenizer.vocab_size, config.d_model),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
-            n_f = Norm(config.normalization, config.noise)
+            n_f = Norm(config.normalization)
         ))
         
-        self.lm_head = nn.Linear(config.d_model, config.n_vocab, bias=False)
+        self.lm_head = nn.Linear(config.d_model, tokenizer.vocab_size, bias=False)
         self.criterion = nn.CrossEntropyLoss()
         
         self.apply(gpt2_init)
@@ -210,26 +216,41 @@ class Transformer(PreTrainedModel):
         return self
     
     @classmethod
-    def from_config(csl, *args, **kwargs):
-        config = Config(*args, **kwargs)
-        return Transformer(config)
-        
-    @classmethod
     def from_pretrained(cls, n_layer=1, d_model=512, epochs=1, modifier=None, device='cuda', **kwargs):
         name = f"tdooms/ts-l{n_layer}-d{d_model}-e{epochs}-{modifier}"
+        
         config = Config.from_pretrained(name)
-        return super(Transformer, Transformer).from_pretrained(name, config=config, device_map=device, **kwargs)
+        tokenizer = AutoTokenizer.from_pretrained("tdooms/TinyStories-4096", pad_token="[EOS]")
+        
+        return super(Transformer, Transformer).from_pretrained(name, config=config, tokenizer=tokenizer, device_map=device, **kwargs)
     
-    def dataset(self, tokenized: bool = False, split: str | None = None):
-        location = f"{self.url}-tokenized-{self.config.n_vocab}" if tokenized else self.url
-        return load_dataset(location, split=split)
+    
+    @classmethod
+    def from_config(cls, tokenizer, *args, **kwargs):
+        config = Config(*args, **kwargs)
+        return Transformer(config, tokenizer)
+    
+    @classmethod
+    def from_stories(cls, *args, **kwargs):
+        tokenizer = AutoTokenizer.from_pretrained("tdooms/TinyStories-4096", pad_token="[EOS]")
+        return cls.from_config(tokenizer, *args, **kwargs) 
+    
+    @classmethod
+    def from_mistral(cls, *args, **kwargs):
+        tokenizer = AutoTokenizer.from_pretrained("mistralai/Mixtral-8x7B-v0.1", pad_token="</s>")
+        return cls.from_config(tokenizer, *args, **kwargs)
+    
+    @classmethod
+    def from_gpt2(cls, *args, **kwargs):
+        tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2", pad_token="<|endoftext|>")
+        return cls.from_config(tokenizer, *args, **kwargs)
     
     def tokenize(self, dataset):
-        return self.tokenizer(dataset["text"], truncation=True, padding=True, max_length=256)
+        return self.tokenizer(dataset["text"], truncation=True, padding=True, max_length=self.config.n_ctx)
     
     @property
     def sight(self):
-        return StoriesSight(self, tokenizer=self.tokenizer)
+        return Sight(self, tokenizer=self.tokenizer)
     
     @property
     def vocab(self):
@@ -261,7 +282,7 @@ class Transformer(PreTrainedModel):
     
     @property
     def w_p(self):
-        return torch.stack([self.transformer.h[i].mlp.o.weight for i in range(self.config.n_layer)], dim=0)
+        return torch.stack([self.transformer.h[i].mlp.p.weight for i in range(self.config.n_layer)], dim=0)
     
     @property
     def w_q(self):
@@ -309,24 +330,19 @@ class Transformer(PreTrainedModel):
     def collator(self, **kwargs):
         return DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
     
-    def fit(self, project="stories", lr=1e-3, wd=0.2, batch_size=128, epochs=1, eval_steps=10_000, callbacks=None, **kwargs):
-        dataset = self.dataset(tokenized=True)
-        train, validation = dataset["train"], dataset["validation"]
-        
+    def fit(self, train, project, lr=1e-3, wd=0.1, batch_size=128, gradient_accumulation_steps=4, callbacks=None, **kwargs):        
         training_args = TrainingArguments(
-            # use_cpu=True,
             output_dir="_checkpoints",
             learning_rate=lr,
             logging_steps=10,
+            adam_beta1=0.9,
+            adam_beta2=0.98,
             per_device_train_batch_size=batch_size,
-            per_device_eval_batch_size=batch_size,
-            num_train_epochs=epochs,
+            gradient_accumulation_steps=gradient_accumulation_steps,
             weight_decay=wd,
-            do_eval=True,
-            evaluation_strategy="steps",
-            eval_steps=eval_steps,
+            do_eval=False,
             report_to="wandb" if project else "none",
-            remove_unused_columns=False,
+            remove_unused_columns=True,
             **kwargs
         )
 
@@ -334,7 +350,6 @@ class Transformer(PreTrainedModel):
             model=self,
             args=training_args,
             train_dataset=train,
-            eval_dataset=validation,
             tokenizer=self.tokenizer,
             data_collator=self.collator,
             callbacks=callbacks,
@@ -405,8 +420,8 @@ class Transformer(PreTrainedModel):
         
         dims = [
             "",
-            f"{self.config.d_model} x {self.config.n_vocab}",
-            f"{self.config.n_vocab} x {self.config.d_model}",
+            f"{self.config.d_model} x {self.tokenizer.vocab_size}",
+            f"{self.tokenizer.vocab_size} x {self.config.d_model}",
             f"3 x {self.config.d_model} x {self.config.d_model}",
             f"{self.config.d_model} x {self.config.d_model}",
             f"2 x {self.config.d_hidden} x {self.config.d_model}",
