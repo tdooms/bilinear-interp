@@ -8,3 +8,8 @@ workspace/__pycache__
 _checkpoints
 wandb
 data/*
+workspace/sngrok/test.ipynb
+
+workspace/sngrok/cosets.ipynb
+
+.DS_Store
