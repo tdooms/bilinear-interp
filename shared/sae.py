@@ -162,7 +162,7 @@ class SAE(PreTrainedModel):
             self.w_enc = Bilinear(self.d_model, self.d_features, bias=True)
         else:
             self.w_enc = nn.Linear(self.d_model, self.d_features, bias=True)
-            # self.w_enc.weight.data = config.init_scale * self.w_dec.weight.data.T.clone()
+            self.w_enc.weight.data = self.w_dec.weight.data.T.contiguous().clone()
         
         self.b_dec = nn.Parameter(torch.zeros(self.d_model, device=device))
         self.register_parameter('b_dec', self.b_dec)
