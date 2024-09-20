@@ -12,10 +12,12 @@ class Noise(nn.Module):
     def __init__(self, scale: float | None = None) -> None:
         super().__init__()
         self.scale = scale
+        self.clamp = False
     
     def forward(self, x):
         if self.training and self.scale is not None:
             x = x + torch.randn_like(x) * self.scale * x.std()
+            x = x.clamp(0.0, 5.0) if self.clamp else x
         return x
 
 

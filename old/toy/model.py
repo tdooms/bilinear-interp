@@ -106,7 +106,7 @@ class ToyModel(nn.Module):
     
     @property
     def ube(self):
-        return make_ube(self.e, self.b, self.u)
+        return qa(self.e, self.b, self.u)
     
     @property
     def p(self):

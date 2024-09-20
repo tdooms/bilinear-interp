@@ -11,7 +11,7 @@ from tqdm import tqdm
 from pandas import DataFrame
 from einops import *
 
-from shared import Linear, Bilinear
+from shared import Linear, Bilinear, Noise
 
 class Config(PretrainedConfig):
     def __init__(
@@ -58,7 +58,8 @@ class Model(PreTrainedModel):
         d_input, d_hidden, d_output = config.d_input, config.d_hidden, config.d_output
         noise, bias, n_layer = config.noise, config.bias, config.n_layer
         
-        self.embed = Linear(d_input, d_hidden, bias=False, noise=noise)
+        self.noise = nn.Identity() if noise == 0.0 else Noise(scale=noise)
+        self.embed = Linear(d_input, d_hidden, bias=False)
         self.blocks = nn.ModuleList([Bilinear(d_hidden, d_hidden, bias=bias) for _ in range(n_layer)])
         self.head = Linear(d_hidden, d_output, bias=False)
         
@@ -66,7 +67,7 @@ class Model(PreTrainedModel):
         self.accuracy = lambda y_hat, y: (y_hat.argmax(dim=-1) == y).float().mean()
     
     def forward(self, x: Float[Tensor, "... inputs"]) -> Float[Tensor, "... outputs"]:
-        x = self.embed(x)
+        x = self.embed(self.noise(x))
         
         for layer in self.blocks:
             x = x + layer(x) if self.config.residual else layer(x)

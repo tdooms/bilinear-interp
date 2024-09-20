@@ -29,5 +29,3 @@ def get_top_sae_activations(sae, model, dataset, k=50, n_batches=100):
         
         # The first dim of the indices is the batch index, the second the context index
         return values.T.cpu(), rearrange(torch.stack(indices), "s t f -> f s t").cpu()
-        
-            
