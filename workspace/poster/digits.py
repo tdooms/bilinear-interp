@@ -2,7 +2,7 @@
 %load_ext autoreload
 %autoreload 2
 
-from mnist.tentative import Model, SMNIST, SFMNIST
+from images.tentative import Model, SMNIST, SFMNIST
 import matplotlib.pyplot as plt
 from matplotlib.colors import TwoSlopeNorm
 import torch

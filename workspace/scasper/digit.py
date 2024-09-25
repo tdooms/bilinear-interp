@@ -2,7 +2,7 @@
 %load_ext autoreload
 %autoreload 2
 
-from mnist import Model, MNIST
+from images import Model, MNIST
 import plotly.express as px
 from einops import *
 import torch

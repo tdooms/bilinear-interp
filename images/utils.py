@@ -3,7 +3,7 @@ import torch
 import itertools
 import einops
 import copy
-from mnist.model import *
+from images.model import *
 
 def get_pixel_label_mutual_info(train_loader, img_size=(28,28), num_classes = 10):
     # TODO: make more generic for non-image inputs

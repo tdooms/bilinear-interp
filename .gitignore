@@ -7,7 +7,8 @@ workspace/__pycache__
 .vscode/
 _checkpoints
 wandb
-data/*
+data
+cache
 workspace/sngrok/test.ipynb
 
 workspace/sngrok/cosets.ipynb

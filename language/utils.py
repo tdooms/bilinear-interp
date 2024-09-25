@@ -55,6 +55,15 @@ class UBE:
         
         return inter
     
+class B:
+    def __init__(self, inner) -> None:
+        self.inner = inner
+    
+    def __getitem__(self, layer):
+        w_l, w_r, w_p = self.inner.w_l[layer].detach(), self.inner.w_r[layer].detach(), self.inner.w_p[layer].detach()
+        b = einsum(w_l, w_r, w_p, "... hid in1, ... hid in2, ... out hid -> ... out in1 in2")
+        return 0.5 * (b + b.mT)
+    
 class Vocab:
     def __init__(self, tokenizer: AutoTokenizer):
         self.vocab = bidict(tokenizer.vocab)

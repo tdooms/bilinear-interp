@@ -25,6 +25,8 @@ w_p = model.w_p[layer]
 b = einsum(w_p, w_l, w_r, "out hidden, hidden in1, hidden in2 -> out in1 in2")
 b = 0.5 * (b + b.mT)
 # %%
+# This will show the self-interaction figure
+
 idx = 1101
 out_latent = sae_out.w_enc.weight.T[:,idx]
 in_latents = sae_in.w_dec.weight
@@ -77,6 +79,7 @@ fig.add_annotation(
     xanchor="center",
     yanchor="middle",
     ax=0,
+    ay=-38
 )
 
 fig.add_annotation(
@@ -88,6 +91,7 @@ fig.add_annotation(
     xanchor="center",
     yanchor="middle",
     ax=0,
+    ay=-38
 )
 
 fig.add_annotation(
@@ -99,7 +103,7 @@ fig.add_annotation(
     xanchor="center",
     yanchor="middle",
     ax=0,
-    ay=-50
+    ay=-60
 )
 
 fig.add_annotation(
@@ -111,11 +115,12 @@ fig.add_annotation(
     xanchor="center",
     yanchor="middle",
     ax=0,
-    ay=-100
+    ay=-110
 )
 
 fig
 # %%
+# This will show the cross-interaction figure
 
 idx = 2034
 out_latent = sae_out.w_enc.weight.T[:,idx]
@@ -159,6 +164,7 @@ fig.update_yaxes(
     linewidth=1,
     mirror=True
 )
+fig
 # %%
 fig.write_image("figure.svg", engine="kaleido")
 # %%

@@ -3,22 +3,25 @@
 %autoreload 2
 
 from language import Transformer
+from datasets import load_dataset
 
 # %%
 
-model = Transformer.from_config(
+model = Transformer.from_stories(
     n_layer=6,
     d_model=512,
     d_hidden=512*4,
     n_head=8,
+    bias=True,
     # gate="silu",
 )
 
-model.summary()
+# model.summary()
 # %%
 model
 # %%
-model.fit(project="stories", epochs=5, wd=0.1, batch_size=128)
+dataset = load_dataset("tdooms/TinyStories-tokenized-4096", split="train")
+model.fit(dataset, project="stories", num_train_epochs=1, wd=0.1, batch_size=128)
 # %%
 
 model.push_to_hub(f"ts-l6-d512-e5")

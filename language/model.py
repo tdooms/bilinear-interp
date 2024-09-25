@@ -12,7 +12,7 @@ from datasets import load_dataset
 import wandb
 from transformers import TrainingArguments, Trainer
 
-from language.utils import UBE, Vocab, Sight
+from language.utils import B, UBE, Vocab, Sight
 from shared import MLP, Norm
 
 
@@ -215,12 +215,22 @@ class Transformer(PreTrainedModel):
         
         return self
     
-    @classmethod
-    def from_pretrained(cls, n_layer=1, d_model=512, epochs=1, modifier=None, device='cuda', **kwargs):
-        name = f"tdooms/ts-l{n_layer}-d{d_model}-e{epochs}-{modifier}"
+    # @classmethod
+    # def from_pretrained(cls, n_layer=1, d_model=512, epochs=1, modifier=None, device='cuda', **kwargs):
+    #     name = f"tdooms/ts-l{n_layer}-d{d_model}-e{epochs}-{modifier}"
         
+    #     config = Config.from_pretrained(name)
+    #     tokenizer = AutoTokenizer.from_pretrained("tdooms/TinyStories-4096", pad_token="[EOS]")
+        
+    #     return super(Transformer, Transformer).from_pretrained(name, config=config, tokenizer=tokenizer, device_map=device, **kwargs)
+    
+    @classmethod
+    def from_pretrained(cls, name, modifier=None, device='cuda', **kwargs):
+        name = f"tdooms/{name}-{modifier}" if modifier else f"tdooms/{name}"
         config = Config.from_pretrained(name)
-        tokenizer = AutoTokenizer.from_pretrained("tdooms/TinyStories-4096", pad_token="[EOS]")
+        
+        # TODO: remove hard-coded tokenizer
+        tokenizer = AutoTokenizer.from_pretrained("tdooms/ts-tokenizer-4096", pad_token="[EOS]")
         
         return super(Transformer, Transformer).from_pretrained(name, config=config, tokenizer=tokenizer, device_map=device, **kwargs)
     
@@ -232,7 +242,7 @@ class Transformer(PreTrainedModel):
     
     @classmethod
     def from_stories(cls, *args, **kwargs):
-        tokenizer = AutoTokenizer.from_pretrained("tdooms/TinyStories-4096", pad_token="[EOS]")
+        tokenizer = AutoTokenizer.from_pretrained("tdooms/ts-tokenizer-4096", pad_token="[EOS]")
         return cls.from_config(tokenizer, *args, **kwargs) 
     
     @classmethod
@@ -265,12 +275,6 @@ class Transformer(PreTrainedModel):
     def w_lr(self):
         lr = torch.stack([self.transformer.h[i].mlp.w.weight for i in range(self.config.n_layer)], dim=0)
         return rearrange(lr, "n_layer (n_proj d_hidden) d_model -> n_proj n_layer d_hidden d_model", n_proj=2)
-    
-    @property
-    def b(self):
-        w_l, w_r, w_p = self.w_l.detach(), self.w_r.detach(), self.w_p.detach()
-        b = einsum(w_l, w_r, w_p, "... hid in1, ... hid in2, ... out hid -> ... out in1 in2")
-        return 0.5 * (b + b.mT)
     
     @property
     def w_l(self):
@@ -316,6 +320,10 @@ class Transformer(PreTrainedModel):
     @property 
     def ov(self):
         return self.w_o @ self.w_v
+    
+    @property
+    def b(self):
+        return B(self)
     
     @property
     def ube(self):

@@ -11,14 +11,20 @@ from tqdm import tqdm
 from pandas import DataFrame
 from einops import *
 
-from shared import Linear, Bilinear, Noise
+from shared import Linear, Bilinear
+
+def _collator(transform=None):
+    def inner(batch):
+        x = torch.stack([item[0] for item in batch]).float()
+        y = torch.stack([item[1] for item in batch])
+        return (x, y) if transform is None else (transform(x), y)
+    return inner
 
 class Config(PretrainedConfig):
     def __init__(
         self,
         lr: float = 1e-3,
         wd: float = 0.5,
-        noise: float = 0.0,
         epochs: int = 100,
         batch_size: int = 2048,
         d_hidden: int = 512,
@@ -35,7 +41,6 @@ class Config(PretrainedConfig):
         self.wd = wd
         self.epochs = epochs
         self.batch_size = batch_size
-        self.noise = noise
     
         self.d_hidden = d_hidden
         self.n_layer = n_layer
@@ -56,9 +61,8 @@ class Model(PreTrainedModel):
         torch.manual_seed(config.seed)
         
         d_input, d_hidden, d_output = config.d_input, config.d_hidden, config.d_output
-        noise, bias, n_layer = config.noise, config.bias, config.n_layer
+        bias, n_layer = config.bias, config.n_layer
         
-        self.noise = nn.Identity() if noise == 0.0 else Noise(scale=noise)
         self.embed = Linear(d_input, d_hidden, bias=False)
         self.blocks = nn.ModuleList([Bilinear(d_hidden, d_hidden, bias=bias) for _ in range(n_layer)])
         self.head = Linear(d_hidden, d_output, bias=False)
@@ -67,7 +71,7 @@ class Model(PreTrainedModel):
         self.accuracy = lambda y_hat, y: (y_hat.argmax(dim=-1) == y).float().mean()
     
     def forward(self, x: Float[Tensor, "... inputs"]) -> Float[Tensor, "... outputs"]:
-        x = self.embed(self.noise(x))
+        x = self.embed(x.flatten(start_dim=1))
         
         for layer in self.blocks:
             x = x + layer(x) if self.config.residual else layer(x)
@@ -112,13 +116,13 @@ class Model(PreTrainedModel):
         
         return loss, accuracy
     
-    def fit(self, train, test):
+    def fit(self, train, test, transform=None):
         torch.manual_seed(self.config.seed)
         
         optimizer = AdamW(self.parameters(), lr=self.config.lr, weight_decay=self.config.wd)
         scheduler = CosineAnnealingLR(optimizer, T_max=self.config.epochs)
         
-        loader = DataLoader(train, batch_size=self.config.batch_size, shuffle=True, drop_last=True)
+        loader = DataLoader(train, batch_size=self.config.batch_size, shuffle=True, drop_last=True, collate_fn=_collator(transform))
         test_x, test_y = test.x, test.y
         
         pbar = tqdm(range(self.config.epochs))
@@ -148,3 +152,24 @@ class Model(PreTrainedModel):
             pbar.set_description(', '.join(f"{k}: {v:.3f}" for k, v in metrics.items()))
         
         return DataFrame.from_records(history, columns=['train/loss', 'train/acc', 'val/loss', 'val/acc'])
+
+    def decompose(self):
+        """The function to decompose a single-layer model into eigenvalues and eigenvectors."""
+        
+        # Split the bilinear layer into the left and right components
+        l, r = self.w_b[0].unbind()
+        
+        # Compute the third-order (bilinear) tensor
+        b = einsum(self.w_u, l, r, "cls out, out in1, out in2 -> cls in1 in2")
+        
+        # Symmetrize the tensor
+        b = 0.5 * (b + b.mT)
+
+        # Perform the eigendecomposition
+        vals, vecs = torch.linalg.eigh(b)
+        
+        # Project the eigenvectors back to the input space
+        vecs = einsum(vecs, self.w_e, "cls emb batch, emb inp -> cls batch inp")
+        
+        # Return the eigenvalues and eigenvectors
+        return vals, vecs

@@ -18,7 +18,7 @@ sae_out = SAE.from_pretrained('ts-l6-d512-e5-b', 'o5-x4', device=device)
 
 # %%
 layer = 5
-idx = 1101
+idx = 2034
 
 w_l = model.w_l[layer]
 w_r = model.w_r[layer]
@@ -163,10 +163,10 @@ in_viz = TopActsVisualizer(sae_in, model, dataset)
 in_viz.set_top_acts(n_batches=50)
 # %%
 
-in_viz.visualize(feature=242, idxs = range(40), post_toks = 30)
+in_viz.visualize(feature=246, idxs = range(40), post_toks = 30)
 # in_viz.visualize(feature=1896, idxs = range(3), post_toks = 30, latex=True, token_odds_ratio=False)
 # %%
-out_viz.visualize(feature=816, idxs = range(40), post_toks = 30)
+out_viz.visualize(feature=416, idxs = range(40), post_toks = 30)
 # %%
 
 Q_diag[1101].abs().topk(5)

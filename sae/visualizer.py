@@ -5,33 +5,93 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 
-class TopActsVisualizer():
-    def __init__(self, sae, model, dataset):
+class TopActsVisualizer:
+    # def __init__(self, sae, model, dataset, n_batches=100, k=50, device="cuda"):
+    #     self.dataset = dataset
+    #     self.tokenizer = model.tokenizer
+    #     self.sae = sae
+        
+    #     config = sae.config
+    #     config.n_buffer = n_batches
+    #     sight = model.sight
+        
+    #     ds = BufferedSampler(config, sight, dataset)
+    #     loader = DataLoader(ds, batch_size=config.out_batch, drop_last=True, shuffle=False)
+    #     pbar = tqdm(zip(range(n_batches), loader), total=n_batches)
+        
+    #     buffer = torch.empty(n_batches, config.out_batch, config.d_features, device=device)
+    #     token_counts = torch.zeros(model.tokenizer.vocab_size, device=device)
+
+    #     for i, batch in pbar:
+    #         print(buffer.shape, sae.encode(batch["activations"]).shape)
+    #         buffer[i] = sae.encode(batch["activations"]).to(device)
+    #         indices, counts = batch["input_ids"].unique(return_counts=True)
+    #         token_counts[indices] += counts.to(device)
+
+    #     # should probably change this to only allow one top index per sample
+    #     bos_excluded = rearrange(buffer[:, :, 1:, :], "... f -> (...) f")
+    #     values, indices = bos_excluded.topk(k=k, dim=0)
+        
+    #     indices = torch.unravel_index(indices, (config.in_batch * n_batches, config.n_ctx - 1))
+
+    #     token_freqs = token_counts / token_counts.sum()
+
+    #     # The first dim of the indices is the batch index, the second the context index
+    #     # add 1 to the indices to account for for excluding [BOS] token
+    #     self.values = values.T
+    #     self.indices = rearrange(torch.stack(indices), "s t f -> f s t") + 1 
+    #     self.token_freqs = token_freqs
+    
+    def __init__(self, sae, model, dataset, n_batches=100, k=50, device="cuda"):
+        self.sight = model.sight
         self.sae = sae
-        # sae.w_dec.weight has shape (d_model, features)
-        # sae.encode() gives activations
-        # sae.point gives location in model
-        self.model = model
-        self.tokenizer = model.tokenizer
         self.dataset = dataset
+        self.tokenizer = model.tokenizer
+        
+        batch_size = 32
+        
+        d_features = sae.w_dec.weight.shape[1]
+        n_ctx = sae.config.n_ctx
 
-    def set_top_acts(self, k = 50, n_batches=100, batch_size = 32):
-        self.values, self.indices, self.token_freqs = self.get_top_sae_activations(k=k, n_batches=n_batches, batch_size=batch_size)
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        pbar = tqdm(zip(range(n_batches), loader), total=n_batches)
 
-    def visualize(self, feature, idxs=range(10), pre_toks = 30, post_toks = 10, text_wrap=100, token_odds_ratio = True, latex=False):
-        batch_idxs = self.indices[feature, 0, idxs]
+        buffer = torch.empty(n_batches, batch_size, n_ctx, d_features, device=device)
+        token_counts = torch.zeros(model.tokenizer.vocab_size, device=device)
+
+        for i, batch in pbar:
+            acts = self.get_activations(batch["input_ids"])
+            buffer[i] = acts.to(device)
+
+            indices, counts = batch["input_ids"].unique(return_counts=True)
+            token_counts[indices] += counts.to(device)
+
+        # should probably change this to only allow one top index per sample
+        # exclude [BOS] token
+        values, indices = (buffer[:, :, 1:, :]).reshape(-1, d_features).topk(k=k, dim=0)
+        indices = torch.unravel_index(indices, (batch_size * n_batches, n_ctx - 1))
+
+        token_freqs = token_counts / token_counts.sum()
+
+        # The first dim of the indices is the batch index, the second the context index
+        self.values = values.T
+        self.indices = rearrange(torch.stack(indices), "s t f -> f s t")
+        self.token_freqs = token_freqs.to("cpu")
+        
+
+    def __call__(self, feature, idxs=range(10), pre_toks=30, post_toks=10, token_odds_ratio=True, export_latex=False, device="cuda"):
+        batch_idxs = self.indices[feature, 0, idxs].to("cpu")
         samples = self.dataset["input_ids"][batch_idxs]
-        all_acts = self.get_activations(samples).to('cpu')
+        all_acts = self.get_activations(samples).to(device)
 
         samples_focal = []
         for i in range(len(idxs)):
             idx = idxs[i]
-            batch_idx = self.indices[feature, 0, idx]
-            ctx_idx = self.indices[feature, 1, idx] + 1 #add 1 to account for excluding [BOS] token
+            ctx_idx = self.indices[feature, 1, idx] + 1
             top_act = self.values[feature, idx].item()
 
             sample = samples[i]
-            acts = all_acts[i]
+            acts = all_acts[i].to("cpu")
             top_tok = self.tokenizer.decode(sample[ctx_idx])
 
             start = max(ctx_idx-pre_toks, 0)
@@ -40,9 +100,9 @@ class TopActsVisualizer():
             acts = acts[start:end, feature]
             samples_focal.append(sample)
 
-            text = self.color_text_by_acts(sample, acts, latex=latex)
+            text = self.color_text_by_acts(sample, acts, latex=export_latex)
             
-            if latex:
+            if export_latex:
                 print(text + '\n\n\\noindent\\hrulefill\n')
             else:
                 print(f"Top act {top_act:.2f} for '{top_tok}' | " + text)
@@ -72,25 +132,6 @@ class TopActsVisualizer():
 
         values, ids = z_score.topk(20)
         print('\n Top tokens by log odds ratio (z score): ' + ', '.join([f'{tok} ({value:.3f})' for tok, value in zip(self.tokenizer.convert_ids_to_tokens(ids), values)]) + '\n')
-
-    # def color_text_by_acts(self, input_ids, acts):
-    #         # get color rgb
-    #         max_act = acts[1:].max()
-    #         colors = 255 * plt.cm.Blues((acts / max_act))
-    #         text = self.tokenizer.convert_ids_to_tokens(input_ids)
-
-    #         # compute brightness/luminance in order to change text color for dark backgrounds
-    #         linear_colors = colors/255
-    #         linear_colors[linear_colors <= 0.04045] = linear_colors[linear_colors <= 0.04045]/12.92
-    #         linear_colors[linear_colors > 0.04045] = ((linear_colors[linear_colors > 0.04045] + 0.055) / 1.055) ** 2
-    #         luminance=0.2126*linear_colors[:,0]+0.7152 * linear_colors[:,1]+0.0722 * linear_colors[:,2]
-    #         luminance[luminance <= 0.008856] = 903.3 * luminance[luminance <= 0.008856]
-    #         luminance[luminance > 0.008856] = luminance[luminance > 0.008856] ** (1/3) * 116 - 16
-
-    #         color_text = ["\033[" + ("37;" if luminance[i] < 60 else "30;") + f"48;2;{int(colors[i,0])};{int(colors[i,1])};{int(colors[i,2])}m" + \
-    #                     text[i]  for i in range(len(text))
-    #                     ] + ["\033[0m"]
-    #         return ' '.join(color_text)
     
 
     def color_text_by_acts(self, input_ids, acts, latex=False, clean=True):
@@ -131,34 +172,8 @@ class TopActsVisualizer():
         return ret.replace(' ##', '') if clean else ret
 
     def get_activations(self, input_ids):
-        sight = self.model.sight
-        with torch.no_grad(), sight.trace(input_ids, validate=False, scan=False):
-            saved = sight[self.sae.point].save()
+        with torch.no_grad(), self.sight.trace(input_ids, validate=False, scan=False):
+            saved = self.sight[self.sae.point].save()
         return self.sae.encode(saved)
 
-    def get_top_sae_activations(self, k=50, n_batches=100, batch_size = 32, device = 'cpu'):
-        sight = self.model.sight
-        d_features = self.sae.w_dec.weight.shape[1]
-        n_ctx = self.model.config.n_ctx
 
-        loader = DataLoader(self.dataset, batch_size=batch_size)
-        pbar = tqdm(zip(range(n_batches), loader), total=n_batches)
-
-        buffer = torch.empty(n_batches, batch_size, n_ctx, d_features, device=device)
-        token_counts = torch.zeros(self.tokenizer.vocab_size, device=device)
-
-        for i, batch in pbar:
-            acts = self.get_activations(batch["input_ids"])
-            buffer[i] = acts.to(device)
-
-            indices, counts = batch["input_ids"].unique(return_counts=True)
-            token_counts[indices] += counts
-
-        # should probably change this to only allow one top index per sample
-        values, indices = (buffer[:,:,1:,:]).reshape(-1, d_features).topk(k=k, dim=0) #exclude [BOS] token
-        indices = torch.unravel_index(indices, (batch_size * n_batches, n_ctx-1))
-
-        token_freqs = token_counts / token_counts.sum()
-
-        # The first dim of the indices is the batch index, the second the context index
-        return values.T.cpu(), rearrange(torch.stack(indices), "s t f -> f s t").cpu(), token_freqs.cpu()

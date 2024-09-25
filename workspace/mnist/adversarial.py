@@ -2,8 +2,8 @@
 %load_ext autoreload
 %autoreload 2
 
-from mnist.model import Model
-from mnist.dataset import MNIST
+from images.model import Model
+from images.dataset import MNIST
 import plotly.express as px
 from einops import *
 import torch

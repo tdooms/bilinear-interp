@@ -5,7 +5,7 @@
 %autoreload 2
 
 from shared import Noise
-from mnist import MNIST, Model
+from images import MNIST, Model
 import plotly.express as px
 from einops import *
 import torch
