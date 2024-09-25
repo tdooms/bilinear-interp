@@ -82,7 +82,7 @@ class Q:
         return fig
 
 
-class SAEInteractions:
+class Interactions:
     """A class to encapsulate the analysis and utils for SAE interactions."""
     def __init__(self, model, layer, expansion=4, use_encoder=True, preload_vis=False, n_viz_batches=50, device="cuda"):
         repo_id="tdooms/ts-medium-scope"

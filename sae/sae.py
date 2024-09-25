@@ -8,7 +8,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import wandb
 from shared.components import Bilinear
-from sae.samplers import ShuffledSampler
+from sae.samplers import Sampler
 from huggingface_hub import HfApi
 from safetensors.torch import save_model, load_model
 from huggingface_hub import hf_hub_download
@@ -226,7 +226,7 @@ class SAE(nn.Module):
         
         sight = model.sight
         
-        sampler = ShuffledSampler(self.config, sight, train)
+        sampler = Sampler(self.config, sight, train)
         loader = DataLoader(sampler, batch_size=self.config.out_batch, drop_last=True, shuffle=False)
         
         # This is a cool trick to have different weight decays for different parts of the model
