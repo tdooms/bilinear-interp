@@ -2,8 +2,26 @@ import torch
 from torch.utils.data import DataLoader
 from einops import rearrange
 from tqdm import tqdm
-
 from sae.sae import *
+
+
+class ConstrainedAdam(torch.optim.Adam):
+    def __init__(self, params, constrained_params, lr, dim=-2):
+        super().__init__(params, lr=lr)
+        self.dim = dim
+        self.constrained_params = list(constrained_params)
+        
+    def step(self, closure=None):
+        with torch.no_grad():
+            for p in self.constrained_params:
+                normed_p = p / p.norm(dim=self.dim, keepdim=True)
+                p.grad -= (p.grad * normed_p).sum(dim=self.dim, keepdim=True) * normed_p
+        
+        super().step(closure=closure)
+        
+        with torch.no_grad():
+            for p in self.constrained_params:
+                p /= p.norm(dim=self.dim, keepdim=True)
 
 
 def get_sae_activations(sae, sight, input_ids):

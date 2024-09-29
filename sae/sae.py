@@ -15,6 +15,7 @@ from huggingface_hub import hf_hub_download
 import json
 import os
 import shutil
+from sae.utils import ConstrainedAdam
 
 Point = namedtuple('Point', ['name', 'layer'])
     
@@ -39,6 +40,7 @@ class SAEConfig:
         bilinear_encoder: bool = False, # Whether to use a bilinear encoder
         token_lookup: bool = False,     # Whether to use a token lookup table
         decoder_decay: float = 0.0,     # Decoder weight decay factor
+        normalize_decoder: bool = True, # Whether to normalize the decoder weights
         encoder_bias: bool = False,     # Whether to use a bias in the encoder
         tag: str | None = None,         # Tag for the model
         **kwargs
@@ -80,6 +82,7 @@ class SAEConfig:
         # Decoder related parameters
         self.token_lookup = token_lookup
         self.decoder_decay = decoder_decay
+        self.normalize_decoder = normalize_decoder
 
         # Miscellaneous parameters
         self.tag = tag
@@ -237,8 +240,8 @@ class SAE(nn.Module):
         
         total = self.config.n_batches if self.config.n_batches is not None else len(loader)
         
-        # Note that we do not need to care about constraining the decoder norm
-        optimizer = Adam(parameters, lr=self.config.lr)
+        lr = self.config.lr
+        optimizer = ConstrainedAdam(parameters, [self.w_dec.weight], lr=lr) if self.config.normalize_decoder else Adam(parameters, lr=lr)
         scheduler = CosineAnnealingLR(optimizer, total, 2e-5)
         
         pbar = tqdm(zip(range(total), loader), total=total)

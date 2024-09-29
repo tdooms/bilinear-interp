@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from datasets import load_dataset
 from sae.visualizer import TopActsVisualizer
 from tqdm import tqdm
+import gc
 
 
 def _detect_outlier(data, factor):
@@ -21,9 +22,22 @@ def _detect_outlier(data, factor):
     values = data[mask]
     return torch.sparse_coo_tensor(indices, values, data.size())
 
-    # For some reason this doesn't work
-    # return data.sparse_mask((data < lower) | (data > upper))
-
+def _detect_self_and_cross_outliers(data, cross_factor, self_factor):
+    idxs = torch.tril_indices(*data.shape[1:], offset=-1)
+    
+    cross = _detect_outlier(data[:, idxs[0], idxs[1]], cross_factor).coalesce()
+    
+    cidxs = cross.indices()
+    uidxs = torch.unravel_index(cidxs[1], data.shape[1:])
+    
+    cross = torch.sparse_coo_tensor(torch.stack([cidxs[0], *uidxs], dim=0), cross.values(), data.size())
+    
+    selv = _detect_outlier(data.diagonal(dim1=-2, dim2=-1), self_factor).coalesce()
+    sidxs = selv.indices()
+    selv = torch.sparse_coo_tensor(torch.stack([sidxs[0], sidxs[1], sidxs[1]], dim=0), selv.values(), data.size())
+    
+    return 2*cross + selv
+    
 def _compute_kurtosis(data):
     flat = data.flatten(start_dim=1)
     mean = torch.mean(flat, dim=0, keepdim=True)
@@ -31,8 +45,11 @@ def _compute_kurtosis(data):
     var = torch.mean(torch.pow(diffs, 2.0), dim=0)
     std = torch.pow(var, 0.5)
     zscores = diffs / std
-    print(zscores.shape)
     return torch.mean(torch.pow(zscores, 4.0), dim=1) - 3.0
+
+def max_truncated_eigenvals(data, k=1):
+    vals = torch.linalg.eigvalsh(data)
+    return vals.abs().topk(k=k).values.sum(-1)
 
 class Q:
     """Leave me be, I like my clean APIs."""
@@ -44,6 +61,12 @@ class Q:
         inner = self.inner
         q_model = einsum(inner.b, inner.out_latents[:, idx], "out in1 in2, out ... -> ... in1 in2")
         return einsum(q_model, inner.inp_latents, inner.inp_latents, "... in1 in2, in1 lat1, in2 lat2 -> ... lat1 lat2")
+    
+    def topk(self, idx: int | slice, k: int = 5, largest: bool = True):
+        q = self[idx]
+        values, indices = torch.tril(2*q, diagonal=-1).flatten().topk(k=k, largest=largest)
+        return values, torch.unravel_index(indices, q.shape)
+        
     
     def histogram(self, idx: int, stride: int | None = None):
         """Draw a nice histogram of the interactions for a given output index. """
@@ -114,6 +137,10 @@ class Interactions:
     def q(self):
         """Compute the Q tensor for a given output index."""
         return Q(self)
+    
+    def q_model(self, idx: int | slice):
+        """Compute the Q tensor for a given output index."""
+        return einsum(self.b, self.out_latents[:, idx], "out in1 in2, out ... -> ... in1 in2")
 
     @property
     def diagonal(self):
@@ -124,17 +151,22 @@ class Interactions:
     
     def outliers(self, cross_factor: float=4, self_factor: float=2):
         """Computes the a sparse matrix of outliers in the B tensor."""  
-        return self.compute(_detect_outlier, factor=cross_factor)
+        return self.compute(_detect_self_and_cross_outliers, cross_factor=cross_factor, self_factor=self_factor)
     
     def kurtosis(self):
         return self.compute(_compute_kurtosis)
+    
+    # def effective_rank(self):
+    #     return self.compute(_effective_rank)
         
-    def compute(self, fn, batch_size=32, *args, **kwargs):
+    def compute(self, fn, batch_size=32, in_latents=True, *args, **kwargs):
         """Execute certain functions batch-wise on the interactions of the B tensor, useful for getting summary statistics."""
         accum = []
         for start in tqdm(range(0, self.out_latents.size(1), batch_size)):
-            matrices = self.q[start:start + batch_size]
+            matrices = self.q[start:start + batch_size] if in_latents else self.q_model(slice(start, start + batch_size))
             accum.append(fn(matrices, *args, **kwargs))
+            del matrices
+            
         return torch.cat(accum)
 
     def visualize(self, out=None, inp=None, *args, **kwargs):

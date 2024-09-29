@@ -170,6 +170,7 @@ class TopActsVisualizer:
 
         ret = ' '.join(colored_tokens)
         return ret.replace(' ##', '') if clean else ret
+    
 
     def get_activations(self, input_ids):
         with torch.no_grad(), self.sight.trace(input_ids, validate=False, scan=False):

@@ -31,7 +31,7 @@ sae.push_to_hub(repo_id="tdooms/new-repo")
 # %%
 sae = SAE.from_pretrained(repo_id="tdooms/new-repo", point=Point("mlp-out", 4), expansion=4, k=20)
 # %%
-
-
-
-
+import torch
+a = torch.randn(10, 10) > 1.0
+b = torch.sparse_coo_tensor(a.nonzero().t(), torch.ones(a.sum().item()), size=a.shape)
+b.coalesce().values()

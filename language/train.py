@@ -16,7 +16,7 @@ model = Transformer.from_stories(
     # gate="silu",
 )
 
-# model.summary()
+model.summary()
 # %%
 model
 # %%
