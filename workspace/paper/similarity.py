@@ -2,27 +2,24 @@
 %load_ext autoreload
 %autoreload 2
 
-from images import MNIST, FMNIST, Model
+from images import MNIST, Model
 import torch
 from torch import nn
 import plotly.express as px
 from einops import *
-from kornia.augmentation import RandomGaussianNoise, RandomAffine
+from kornia.augmentation import RandomGaussianNoise
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import plotly.io as pio
 from itertools import product
-import matplotlib.pyplot as plt
+from torch.nn.functional import cosine_similarity
 from scipy import stats
+import matplotlib.pyplot as plt
 
 pio.templates.default = "plotly_white"
-
 color = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0.0)
 # %%
 
-results = torch.empty(6, 5, 31)
-ground = torch.empty(6, 5)
-
+features = torch.empty(6, 5, 10, 20, 784)
 sizes = [30, 50, 100, 300, 500, 1000]
 
 for d, i in product(range(6), range(5)):
@@ -52,15 +49,12 @@ for d, i in product(range(6), range(5)):
         # Compute using only the top k eigenvalues and eigenvectors
         p = einsum(data.flatten(start_dim=1), top_k_vecs, "batch inp, out hid inp -> batch hid out").pow(2)
         return einsum(p, top_k_vals, "batch hid out, out hid -> batch out")
-    
-    for k in range(0, 31):
-        logits = eval_truncated(test.x, vals, vecs, k=k)
-        results[d, i, k] = (logits.argmax(dim=1) == test.y).float().mean().cpu()
-    ground[d, i] = (mnist(test.x).argmax(dim=1) == test.y).float().mean().item()
+
+    features[d, i] = vecs[:, :20, :]
 # %%
-# diff = ground - results
-# diff = ground[-1, :][None, :, None] - results
-diff = 1 - results
+torch.save(features, "cache/features.pt")
+# %%
+features = torch.load("cache/features.pt")
 # %%
 def conf_interval(sims, conf=0.95):
     sem = torch.std(sims, dim=-2) / torch.sqrt(torch.tensor(sims.shape[-2]))
@@ -73,17 +67,23 @@ def conf_interval(sims, conf=0.95):
     
     return ci_lower, ci_upper
 
+s = slice(-20, None)
+sims = cosine_similarity(features[..., None, :, :, s, :], features[..., :, None, :, s, :], dim=-1)
+idxs = torch.triu_indices(5, 5)
+sims = rearrange(sims[:, idxs[0], idxs[1]].abs(), "... batch cls comp -> ... (batch cls) comp")
+
 fig = go.Figure()
 
 viridis = plt.cm.get_cmap('viridis')
 colors = [viridis(i)[:3] for i in [0., 0.25, 0.5, 0.75, 0.9, 1.]]
 colors = [f'rgb({int(r*255)}, {int(g*255)}, {int(b*255)})' for r, g, b in colors]
 
+    
 for i in range(6):
-    mean = torch.mean(diff[i], axis=0)
-    # std = torch.std(diff[i], axis=0)
+    mean = torch.mean(sims[i], axis=-2)
+    # std = torch.std(sims[i], axis=-2)
     x = torch.arange(len(mean))
-    low, up = conf_interval(diff[i], conf=0.9)
+    low, up = conf_interval(sims[i], conf=0.9)
     
     # Add mean line
     fig.add_trace(go.Scatter(
@@ -108,13 +108,12 @@ for i in range(6):
     ))
 
 # Update layout
-fig.update_layout(title="Truncation Across Sizes", title_x=0.5)
-fig.update_yaxes(tickvals=[0.01, 0.1, 1], ticktext=["1%", "10%","100%"], range=[-2.02, 0.02], type="log")
-fig.update_layout(width=600, height=400, legend_title_text='Model Size')
-fig.update_xaxes(title="Eigenvector rank (per digit)")
-fig.update_yaxes(title="Classification error")
+fig.update_layout(title="Similarity Across Eigenvectors", title_x=0.5)
+fig.update_layout(showlegend=True, width=600, height=400, legend_title_text='Model Size')
+fig.update_xaxes(title="Eigenvector rank")
+fig.update_yaxes(title="Cosine similarity", range=[0.39, 1.01])
 fig
 
 # %%
-fig.write_image("C:\\Users\\thoma\\Downloads\\truncation.pdf", engine="kaleido")
+fig.write_image("C:\\Users\\thoma\\Downloads\\similarity.pdf", engine="kaleido")
 # %%

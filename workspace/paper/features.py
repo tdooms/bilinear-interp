@@ -22,7 +22,7 @@ fmnist = Model.from_config(epochs=100, wd=1.0, n_layer=1, residual=False).cuda()
 
 transform = nn.Sequential(
     RandomGaussianNoise(mean=0, std=0.5, p=1),
-    RandomAffine(degrees=0, translate=(0.25, 0.25), p=1),
+    # RandomAffine(degrees=0, translate=(0.25, 0.25), p=1),
 )
 
 torch.set_grad_enabled(True)
@@ -30,23 +30,27 @@ train, test = MNIST(train=True), MNIST(train=False)
 mnist.fit(train, test, transform)
 
 train, test = FMNIST(train=True), FMNIST(train=False)
-# fmnist.fit(train, test, transform)
+fmnist.fit(train, test, transform)
 torch.set_grad_enabled(False)
 
 m_vals, m_vecs = mnist.decompose()
 f_vals, f_vecs = fmnist.decompose()
 # %%
-vecs = torch.cat([m_vecs[:7, -1], f_vecs[:7, -1]])
+idxs = slice(1, 6)
+vecs = torch.cat([m_vecs[idxs, -1], f_vecs[idxs, -1]])
 vecs /= vecs.abs().max(1, keepdim=True).values
 
-fig = px.imshow(vecs.view(-1, 28, 28).cpu(), facet_col=0, facet_col_wrap=7, height=330, width=1000, **color)
+fig = px.imshow(vecs.view(-1, 28, 28).cpu(), facet_col=0, facet_col_wrap=5, height=330, width=800, facet_row_spacing=0.1, **color)
 
-fig.update_layout(coloraxis_showscale=False, margin=dict(l=0, r=0, b=0, t=5))
+fig.update_layout(coloraxis_showscale=False, margin=dict(l=0, r=0, b=0, t=20))
 fig.update_xaxes(visible=False)
 fig.update_yaxes(visible=False)
 
-labels = ["t-shirt/top", "trouser", "pullover", "dress", "coat", "sandal", "shirt", "0", "1", "2", "3", "4", "5", "6"]
-[a.update(text=f"{labels[i]}", y=a["y"]-0.04) for i, a in enumerate(fig.layout.annotations)]
+m_labels = [f"{i}" for i in range(10)]
+f_labels = ["t-shirt/top", "trouser", "pullover", "dress", "coat", "sandal", "shirt", "sneaker", "bag", "ankle boot"]
+labels = f_labels[idxs] + m_labels[idxs]
+
+[a.update(text=f"<b>{labels[i]}</b>", y=a["y"]+0.005) for i, a in enumerate(fig.layout.annotations)]
 fig
 # %%
 fig.write_image("C:\\Users\\thoma\\Downloads\\eigenfeatures.pdf", engine="kaleido")
