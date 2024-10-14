@@ -1,0 +1,10 @@
+einops
+transformers
+jaxtyping
+pandas
+datasets
+wandb
+accelerate
+bidict
+
+nnsight

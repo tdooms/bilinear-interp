@@ -1,55 +1,10 @@
+import torch
 from einops import *
+import plotly.graph_objects as go
 
 from sae import SAE, Point
-import torch
-import plotly.graph_objects as go
-from datasets import load_dataset
-from sae.visualizer import TopActsVisualizer
 from tqdm import tqdm
-import gc
 
-
-def _detect_outlier(data, factor):
-    q1 = torch.quantile(data, 0.25, dim=1, keepdim=True)
-    q3 = torch.quantile(data, 0.75, dim=1, keepdim=True)
-    
-    iqr = q3 - q1
-    
-    lower, upper = q1 - (factor * iqr), q3 + (factor * iqr)
-    mask = (data < lower) | (data > upper)
-    
-    indices = mask.nonzero().T
-    values = data[mask]
-    return torch.sparse_coo_tensor(indices, values, data.size())
-
-def _detect_self_and_cross_outliers(data, cross_factor, self_factor):
-    idxs = torch.tril_indices(*data.shape[1:], offset=-1)
-    
-    cross = _detect_outlier(data[:, idxs[0], idxs[1]], cross_factor).coalesce()
-    
-    cidxs = cross.indices()
-    uidxs = torch.unravel_index(cidxs[1], data.shape[1:])
-    
-    cross = torch.sparse_coo_tensor(torch.stack([cidxs[0], *uidxs], dim=0), cross.values(), data.size())
-    
-    selv = _detect_outlier(data.diagonal(dim1=-2, dim2=-1), self_factor).coalesce()
-    sidxs = selv.indices()
-    selv = torch.sparse_coo_tensor(torch.stack([sidxs[0], sidxs[1], sidxs[1]], dim=0), selv.values(), data.size())
-    
-    return 2*cross + selv
-    
-def _compute_kurtosis(data):
-    flat = data.flatten(start_dim=1)
-    mean = torch.mean(flat, dim=0, keepdim=True)
-    diffs = flat - mean
-    var = torch.mean(torch.pow(diffs, 2.0), dim=0)
-    std = torch.pow(var, 0.5)
-    zscores = diffs / std
-    return torch.mean(torch.pow(zscores, 4.0), dim=1) - 3.0
-
-def max_truncated_eigenvals(data, k=1):
-    vals = torch.linalg.eigvalsh(data)
-    return vals.abs().topk(k=k).values.sum(-1)
 
 class Q:
     """Leave me be, I like my clean APIs."""
@@ -67,7 +22,6 @@ class Q:
         values, indices = torch.tril(2*q, diagonal=-1).flatten().topk(k=k, largest=largest)
         return values, torch.unravel_index(indices, q.shape)
         
-    
     def histogram(self, idx: int, stride: int | None = None):
         """Draw a nice histogram of the interactions for a given output index. """
         q_latent = self[idx]
@@ -107,31 +61,27 @@ class Q:
 
 class Interactions:
     """A class to encapsulate the analysis and utils for SAE interactions."""
-    def __init__(self, model, layer, expansion=4, use_encoder=True, preload_vis=False, n_viz_batches=50, device="cuda"):
-        repo_id="tdooms/ts-medium-scope"
-        
+    def __init__(self, model, layer, out: dict = dict(), inp: dict = dict(), use_encoder=True, n_viz_batches=50, device="cuda"):
         self.model = model
         self.n_viz_batches = n_viz_batches
         
-        self.inp = SAE.from_pretrained(repo_id, point=Point("resid-mid", layer), expansion=expansion, k=30, device=device)
-        self.out = SAE.from_pretrained(repo_id, point=Point("mlp-out", layer), expansion=expansion, k=30, device=device)
+        repo = model.config.repo
+        
+        inp = dict(name="resid-mid", expansion=4, k=30) | inp
+        out = dict(name="mlp-out", expansion=4, k=30) | out
+        
+        self.inp = SAE.from_pretrained(repo, point=Point(inp["name"], layer), expansion=inp["expansion"], k=inp["k"], device=device)
+        self.out = SAE.from_pretrained(repo, point=Point(out["name"], layer), expansion=out["expansion"], k=inp["k"], device=device)
         
         self.out_latents = self.out.w_enc.weight.T if use_encoder else self.out.w_dec.weight
         self.inp_latents = self.inp.w_dec.weight
         
-        self.b = model.b[layer]
-        
-        if preload_vis:
-            self.load_viz()
-        else:
-            self.out_viz, self.inp_viz = None, None
+        # This shouldn't need to be materialized
+        self.b = einsum(model.w_l[layer], model.w_r[layer], model.w_p[layer], "hid in1, hid in2, out hid -> out in1 in2")
 
-    def load_viz(self):
-        data_url = "tdooms/TinyStories-tokenized-4096"
-        dataset = load_dataset(data_url, split="train[:10000]").with_format("torch")
-        
-        self.out_viz = TopActsVisualizer(self.out, self.model, dataset, n_batches=self.n_viz_batches)
-        self.inp_viz = TopActsVisualizer(self.inp, self.model, dataset, n_batches=self.n_viz_batches)
+    # def visualizer(self, dataset):
+    #     self.out_viz = TopActsVisualizer(self.out, self.model, dataset, n_batches=self.n_viz_batches)
+    #     self.inp_viz = TopActsVisualizer(self.inp, self.model, dataset, n_batches=self.n_viz_batches)
     
     @property
     def q(self):
@@ -149,16 +99,6 @@ class Interactions:
         w_l, w_r, w_p = self.model.w_l[5], self.model.w_r[5], self.model.w_p[5]
         return einsum(w_p, w_l, w_r, self.out_latents, self.inp_latents, self.inp_latents, "mid hid, hid in1, hid in2, mid out, in1 lat, in2 lat -> out lat")
     
-    def outliers(self, cross_factor: float=4, self_factor: float=2):
-        """Computes the a sparse matrix of outliers in the B tensor."""  
-        return self.compute(_detect_self_and_cross_outliers, cross_factor=cross_factor, self_factor=self_factor)
-    
-    def kurtosis(self):
-        return self.compute(_compute_kurtosis)
-    
-    # def effective_rank(self):
-    #     return self.compute(_effective_rank)
-        
     def compute(self, fn, batch_size=32, in_latents=True, *args, **kwargs):
         """Execute certain functions batch-wise on the interactions of the B tensor, useful for getting summary statistics."""
         accum = []

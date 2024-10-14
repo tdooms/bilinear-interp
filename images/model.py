@@ -11,7 +11,7 @@ from tqdm import tqdm
 from pandas import DataFrame
 from einops import *
 
-from shared import Linear, Bilinear
+from shared.components import Linear, Bilinear
 
 def _collator(transform=None):
     def inner(batch):

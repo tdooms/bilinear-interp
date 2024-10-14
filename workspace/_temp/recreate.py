@@ -1,11 +1,13 @@
 # %%
+
 %load_ext autoreload
 %autoreload 2
 
 from language import Transformer
+import torch
 
 # %%
+torch.set_grad_enabled(False)
 model = Transformer.from_pretrained("tdooms/fw-medium")
-# %%
-model.generate("Generally, a tree is made out of", max_length=100, top_k=2)
+inter = Interactions(model, layer=7, expansion=8, repo="tdooms/fw-medium-scope")
 # %%

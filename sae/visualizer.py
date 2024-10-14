@@ -1,7 +1,10 @@
 import torch
-from torch.utils.data import DataLoader
-from einops import rearrange
+from sae.sae import SAE, Point
+from einops import *
+import plotly.graph_objects as go
+from datasets import load_dataset
 from tqdm import tqdm
+from torch.utils.data import DataLoader, Dataset
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -18,7 +21,7 @@ class TopActsVisualizer:
     #     ds = BufferedSampler(config, sight, dataset)
     #     loader = DataLoader(ds, batch_size=config.out_batch, drop_last=True, shuffle=False)
     #     pbar = tqdm(zip(range(n_batches), loader), total=n_batches)
-        
+    
     #     buffer = torch.empty(n_batches, config.out_batch, config.d_features, device=device)
     #     token_counts = torch.zeros(model.tokenizer.vocab_size, device=device)
 
@@ -79,14 +82,26 @@ class TopActsVisualizer:
         self.token_freqs = token_freqs.to("cpu")
         
 
-    def __call__(self, feature, idxs=range(10), pre_toks=30, post_toks=10, token_odds_ratio=True, export_latex=False, device="cuda"):
+    def __call__(self, feature, idxs=range(10), max_num=3, pre_toks=30, post_toks=10, token_odds_ratio=True, export_latex=False, device="cuda"):
         batch_idxs = self.indices[feature, 0, idxs].to("cpu")
         samples = self.dataset["input_ids"][batch_idxs]
         all_acts = self.get_activations(samples).to(device)
+        
+        memory = [] # a quick and dirty way to skip already seen samples
+        counter = 0
 
         samples_focal = []
         for i in range(len(idxs)):
+            if counter >= max_num:
+                break
             idx = idxs[i]
+            
+            # quick fix cont.
+            sample_idx = self.indices[feature, 0, idx]
+            if sample_idx in memory:
+                continue
+            memory.append(sample_idx)
+            
             ctx_idx = self.indices[feature, 1, idx] + 1
             top_act = self.values[feature, idx].item()
 
@@ -103,9 +118,12 @@ class TopActsVisualizer:
             text = self.color_text_by_acts(sample, acts, latex=export_latex)
             
             if export_latex:
-                print(text + '\n\n\\noindent\\hrulefill\n')
+                print(text + ' \\\\ \n\\hline \n')
             else:
                 print(f"Top act {top_act:.2f} for '{top_tok}' | " + text)
+            
+            # hacky stuff cont2.
+            counter += 1
 
         if token_odds_ratio:
             self.print_token_odds_ratio(samples_focal)
@@ -158,10 +176,10 @@ class TopActsVisualizer:
                 # No background color for zero activation
                 colored_tokens.append(token)
             elif latex:
-                r, g, b = color
+                r, g, b = [int(255 - 0.6 * (255 - x)) for x in color]
                 latex_color = f"{{rgb,255:red,{r};green,{g};blue,{b}}}"
                 escaped_token = token.replace('\\', '\\textbackslash{}').replace('_', '\\_').replace('^', '\\textasciicircum{}')
-                colored_tokens.append(f"\\colorbox{latex_color}{{\\strut {escaped_token}}}")
+                colored_tokens.append(f"\\colorbox{latex_color}{{\\strut  {escaped_token}}}")
             else:
                 r, g, b = color
                 ansi_bg_color = rgb_to_ansi_bg(r, g, b)

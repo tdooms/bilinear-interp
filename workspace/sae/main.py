@@ -2,34 +2,37 @@
 %load_ext autoreload
 %autoreload 2
 
-from datasets import load_dataset
 from language import Transformer
-from einops import *
-from sae import *
+import torch
 
 # %%
-model = Transformer.from_pretrained("ts-medium")
-
-data_url = "tdooms/ts-tokenized-4096"
-train = load_dataset(data_url, split="train").with_format("torch")
-
-validation = load_dataset(data_url, split="validation[:16]")
-validation = model.collator(validation["input_ids"])
+torch.set_grad_enabled(False)
+model = Transformer.from_pretrained("tdooms/fw-medium")
+inter = Interactions(model, layer=7, expansion=8, repo="tdooms/fw-medium-scope")
 # %%
-sae = SAE.from_config(point=Point("mlp-in", 5), d_model=512, expansion=4, n_buffers=2**8, k=30, n_batches=2**15).cuda()
-sae.fit(model, train, validation, project="story-sae")
+inter.q.histogram(3625, stride=11)
 # %%
-sae.push_to_hub("tdooms/ts-medium-scope")
+kurt = inter.kurtosis(batch_size=8)
+kurt.topk(10)
+# %%
+# import plotly.express as px
+# px.histogram(kurt.cpu())
+
+# %%
+p = inter.compute(max_truncated_eigenvals, in_latents=False, k=2)
+p.topk(10)
+# %%
+px.histogram(p.cpu())
+# %%
+vals = torch.linalg.eigvalsh(inter.q[5300])
+px.line(vals.cpu(), markers=True)
+# %%
+inter.visualize(out=3625)
+# %%
+torch.cosine_similarity(inter.out.w_dec.weight[:, 3625], inter.out.w_dec.weight[:, 636], dim=0)
 # %%
 
-n_batches = 2**16
-for i in range(6):
-    sae = SAE.from_config(point=Point("resid-mid", i), d_model=512, expansion=4, n_buffers=2**8, k=30, n_batches=n_batches).cuda()
-    sae.fit(model, train, validation, project="story-sae")
-    sae.push_to_hub("tdooms/ts-medium-scope")
-
-for i in range(6):
-    sae = SAE.from_config(point=Point("mlp-out", i), d_model=512, expansion=4, n_buffers=2**8, k=30, n_batches=n_batches).cuda()
-    sae.fit(model, train, validation, project="story-sae")
-    sae.push_to_hub("tdooms/ts-medium-scope")
+dirs = inter.out.w_dec.weight[:, p.topk(50).indices]
+sims = torch.cosine_similarity(dirs[..., None], dirs[:, None], dim=0)
+px.imshow(sims.cpu(), color_continuous_scale="RdBu")
 # %%

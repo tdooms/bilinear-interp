@@ -3,22 +3,41 @@ from einops import *
 from torch import nn
 from tqdm import tqdm
 from collections import namedtuple
-from torch.utils.data import DataLoader
 from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import wandb
 from shared.components import Bilinear
-from sae.samplers import Sampler
 from huggingface_hub import HfApi
 from safetensors.torch import save_model, load_model
 from huggingface_hub import hf_hub_download
 import json
 import os
 import shutil
-from sae.utils import ConstrainedAdam
+from language.utils import Sight
+from sae.samplers import ShuffleSampler
 
 Point = namedtuple('Point', ['name', 'layer'])
-    
+
+
+class ConstrainedAdam(torch.optim.Adam):
+    def __init__(self, params, constrained_params, lr, dim=-2):
+        super().__init__(params, lr=lr)
+        self.dim = dim
+        self.constrained_params = list(constrained_params)
+        
+    def step(self, closure=None):
+        with torch.no_grad():
+            for p in self.constrained_params:
+                normed_p = p / p.norm(dim=self.dim, keepdim=True)
+                p.grad -= (p.grad * normed_p).sum(dim=self.dim, keepdim=True) * normed_p
+        
+        super().step(closure=closure)
+        
+        with torch.no_grad():
+            for p in self.constrained_params:
+                p /= p.norm(dim=self.dim, keepdim=True)
+
+
 class SAEConfig:
     def __init__(
         self,
@@ -27,8 +46,8 @@ class SAEConfig:
         lr: float = 1e-4,               # Learning rate
         in_batch: int = 32,             # batch size for the transformer
         out_batch: int = 4096,          # batch size for the SAE
-        n_buffers: int = 2**8,          # Number of batches to buffer
-        n_batches: int | None = None,   # Number of batches to train, defaults to the full dataset
+        n_batches: int = 2**8,          # Number of batches to buffer
+        n_buffers: int | None = None,   # Number of buffers to train for, defaults to the full dataset
         d_model: int | None = None,     # Model dimension at the hook point
         n_ctx: int = 256,               # Context length
         expansion: int = 4,             # SAE expansion factor
@@ -93,6 +112,10 @@ class SAEConfig:
         return self.expansion * self.d_model
     
     @property
+    def n_tokens(self):
+        return self.n_ctx * self.in_batch * self.n_batches * self.n_buffers
+    
+    @property
     def name(self):
         ret = f"{self.point.layer}-{self.point.name}-x{self.expansion}-k{self.k}".replace("_", "-")
         return f"{ret}-{self.tag}" if self.tag else ret
@@ -100,7 +123,7 @@ class SAEConfig:
 class SAE(nn.Module):
     """And end-to-end top-k sparse autoencoder"""
     
-    def __init__(self, config, device="cuda") -> None:
+    def __init__(self, config) -> None:
         super().__init__()
         
         self.config = config
@@ -121,7 +144,7 @@ class SAE(nn.Module):
             self.w_enc = nn.Linear(self.d_model, self.d_features, bias=config.encoder_bias)
             self.w_enc.weight.data = self.w_dec.weight.data.T.contiguous().clone()
         
-        self.b_dec = nn.Parameter(torch.zeros(self.d_model, device=device))
+        self.b_dec = nn.Parameter(torch.zeros(self.d_model))
         self.register_parameter('b_dec', self.b_dec)
 
     def preprocess(self, x):
@@ -157,7 +180,7 @@ class SAE(nn.Module):
         return x_hat, x_hid
     
     @staticmethod
-    def from_pretrained(repo_id, point, expansion, k, device="cuda"):
+    def from_pretrained(repo_id, point, expansion, k):
         config = SAEConfig(point=point, expansion=expansion, k=k, d_model=0)
 
         config_path = hf_hub_download(repo_id=repo_id, filename=f"{config.name}/config.json")
@@ -165,7 +188,7 @@ class SAE(nn.Module):
 
         sae = SAE.from_config(**json.load(open(config_path)))
         load_model(sae, model_path)
-        return sae.to(device)
+        return sae
     
     @staticmethod
     def from_config(*args, **kwargs):
@@ -227,24 +250,21 @@ class SAE(nn.Module):
         """A general fit function with a default training loop"""
         if project: wandb.init(project=project, config=self.config)
         
-        sight = model.sight
+        sight = Sight(model)
+        sampler = ShuffleSampler(sight, train, **vars(self.config))
         
-        sampler = Sampler(self.config, sight, train)
-        loader = DataLoader(sampler, batch_size=self.config.out_batch, drop_last=True, shuffle=False)
-        
-        # This is a cool trick to have different weight decays for different parts of the model
         parameters = [
             dict(params=list(self.w_enc.parameters()) + [self.b_dec], weight_decay=0.0),
             dict(params=self.w_dec.parameters(), weight_decay=self.config.decoder_decay)
         ]
         
-        total = self.config.n_batches if self.config.n_batches is not None else len(loader)
+        total = self.config.n_buffers
         
         lr = self.config.lr
         optimizer = ConstrainedAdam(parameters, [self.w_dec.weight], lr=lr) if self.config.normalize_decoder else Adam(parameters, lr=lr)
         scheduler = CosineAnnealingLR(optimizer, total, 2e-5)
         
-        pbar = tqdm(zip(range(total), loader), total=total)
+        pbar = tqdm(zip(range(total), sampler), total=total, smoothing=0.001)
         added = float("nan")
 
         for idx, batch in pbar:
@@ -264,6 +284,4 @@ class SAE(nn.Module):
             pbar.set_description(f"L1: {metrics['l1']:.4f}, NMSE: {metrics['nmse']:.4f}, added: {added:.4f}")
             
             if project: wandb.log(metrics)
-        # This is causing a kernel crash, yay!
-        # if project: wandb.finish()
-
+        if project: wandb.finish()

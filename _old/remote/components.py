@@ -24,14 +24,6 @@ class Bilinear(nn.Linear):
     def w_r(self):
         return self.weight.chunk(2, dim=0)[1]
 
-# class Bilinear(nn.Linear):
-#     """A bilinear layer with optional gate and noise"""
-#     def __init__(self, d_in: int, d_out: int, bias=False, gate=None) -> None:
-#         super().__init__(d_in, d_out, bias=bias)
-    
-#     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
-#         return super().forward(x).pow(2)
-
 
 class Linear(nn.Linear):
     """A linear layer with optional gate and noise"""
