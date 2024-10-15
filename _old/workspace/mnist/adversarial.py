@@ -3,7 +3,7 @@
 %autoreload 2
 
 from shared.model import Model
-from images.datasets import MNIST
+from image.datasets import MNIST
 import plotly.express as px
 from einops import *
 import torch

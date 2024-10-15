@@ -87,16 +87,16 @@ class Model(PreTrainedModel):
         return self.head.weight.data
     
     @property
-    def w_b(self):
+    def w_lr(self):
         return torch.stack([rearrange(layer.weight.data, "(s o) h -> s o h", s=2) for layer in self.blocks])
     
     @property
     def w_l(self):
-        return self.w_b.unbind(1)[0]
+        return self.w_lr.unbind(1)[0]
     
     @property
     def w_r(self):
-        return self.w_b.unbind(1)[1]
+        return self.w_lr.unbind(1)[1]
     
     @classmethod
     def from_config(cls, *args, **kwargs):
@@ -157,7 +157,7 @@ class Model(PreTrainedModel):
         """The function to decompose a single-layer model into eigenvalues and eigenvectors."""
         
         # Split the bilinear layer into the left and right components
-        l, r = self.w_b[0].unbind()
+        l, r = self.w_lr[0].unbind()
         
         # Compute the third-order (bilinear) tensor
         b = einsum(self.w_u, l, r, "cls out, out in1, out in2 -> cls in1 in2")
