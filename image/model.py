@@ -4,14 +4,14 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
-
-from transformers import PretrainedConfig, PreTrainedModel
+from dataclasses import dataclass
 from jaxtyping import Float
 from tqdm import tqdm
 from pandas import DataFrame
 from einops import *
 
 from shared.components import Linear, Bilinear
+from shared.hub import HubMixin
 
 def _collator(transform=None):
     def inner(batch):
@@ -20,45 +20,28 @@ def _collator(transform=None):
         return (x, y) if transform is None else (transform(x), y)
     return inner
 
-class Config(PretrainedConfig):
-    def __init__(
-        self,
-        lr: float = 1e-3,
-        wd: float = 0.5,
-        epochs: int = 100,
-        batch_size: int = 2048,
-        d_hidden: int = 512,
-        n_layer: int = 3,
-        d_input: int = 784,
-        d_output: int = 10,
-        bias: bool = False,
-        residual: bool = False,
-        device: str = "cuda",
-        seed: int = 42,
-        **kwargs
-    ):
-        self.lr = lr
-        self.wd = wd
-        self.epochs = epochs
-        self.batch_size = batch_size
-    
-        self.d_hidden = d_hidden
-        self.n_layer = n_layer
-        self.d_input = d_input
-        self.d_output = d_output
-        self.bias = bias
-        self.residual = residual
-        
-        self.device = device
-        self.seed = seed
-        
-        super().__init__(**kwargs)
+
+@dataclass
+class Config:
+    lr: float = 1e-3
+    wd: float = 0.5
+    epochs: int = 100
+    batch_size: int = 2048
+    d_hidden: int = 512
+    n_layer: int = 3
+    d_input: int = 784
+    d_output: int = 10
+    bias: bool = False
+    residual: bool = False
+    device: str = "cuda"
+    seed: int = 42
 
 
-class Model(PreTrainedModel):
+class Model(nn.Module, HubMixin):
     def __init__(self, config) -> None:
-        super().__init__(config)
+        super().__init__()
         torch.manual_seed(config.seed)
+        self.config = config
         
         d_input, d_hidden, d_output = config.d_input, config.d_hidden, config.d_output
         bias, n_layer = config.bias, config.n_layer
@@ -77,6 +60,10 @@ class Model(PreTrainedModel):
             x = x + layer(x) if self.config.residual else layer(x)
         
         return self.head(x)
+    
+    @staticmethod
+    def from_config(*args, **kwargs):
+        return Model(Config(*args, **kwargs))
     
     @property
     def w_e(self):
@@ -97,16 +84,6 @@ class Model(PreTrainedModel):
     @property
     def w_r(self):
         return self.w_lr.unbind(1)[1]
-    
-    @classmethod
-    def from_config(cls, *args, **kwargs):
-        return cls(Config(*args, **kwargs))
-
-    @classmethod
-    def from_pretrained(cls, path, *args, **kwargs):
-        new = cls(Config(*args, **kwargs))
-        new.load_state_dict(torch.load(path))
-        return new
     
     def step(self, x, y):
         y_hat = self(x)

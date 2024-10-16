@@ -30,13 +30,15 @@ model.generate("", max_length=100)
 
 model = Transformer.from_config(
     tokenizer="mistral",
-    n_layer=4,
+    n_layer=8,
     d_model=3*256,
     d_hidden=3*4*256,
     n_head=12,
     bias=False,
     # gate="silu",
 )
+model.summary()
+# %%
 
 train = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-10BT", split="train", streaming=True)
 tokenized = train.map(model.tokenize, batched=True)

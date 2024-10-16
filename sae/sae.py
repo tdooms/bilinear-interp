@@ -7,12 +7,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import wandb
 from shared.components import Bilinear
-from huggingface_hub import HfApi
-from safetensors.torch import save_model, load_model
-from huggingface_hub import hf_hub_download
-import json
-import os
-import shutil
+from shared.hub import HubMixin
 from language.utils import Sight
 from sae.samplers import ShuffleSampler
 
@@ -120,7 +115,7 @@ class SAEConfig:
         ret = f"{self.point.layer}-{self.point.name}-x{self.expansion}-k{self.k}".replace("_", "-")
         return f"{ret}-{self.tag}" if self.tag else ret
 
-class SAE(nn.Module):
+class SAE(nn.Module, HubMixin):
     """And end-to-end top-k sparse autoencoder"""
     
     def __init__(self, config) -> None:
@@ -180,19 +175,16 @@ class SAE(nn.Module):
         return x_hat, x_hid
     
     @staticmethod
-    def from_pretrained(repo_id, point, expansion, k):
-        config = SAEConfig(point=point, expansion=expansion, k=k, d_model=0)
-
-        config_path = hf_hub_download(repo_id=repo_id, filename=f"{config.name}/config.json")
-        model_path = hf_hub_download(repo_id=repo_id, filename=f"{config.name}/model.safetensors")
-
-        sae = SAE.from_config(**json.load(open(config_path)))
-        load_model(sae, model_path)
-        return sae
-    
-    @staticmethod
     def from_config(*args, **kwargs):
         return SAE(SAEConfig(*args, **kwargs))
+    
+    @staticmethod
+    def from_pretrained(repo_id, point, expansion, k):
+        config = SAEConfig(point=point, expansion=expansion, k=k, d_model=0)
+        return HubMixin.from_pretrained(SAE, repo_id, config.name)
+    
+    def push_to_hub(self, repo_id):
+        super().push_to_hub(repo_id, self.config.name)
     
     def metrics(self, x, x_hid, x_hat):
         """Computes all interesting metrics for the model"""

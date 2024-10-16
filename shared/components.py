@@ -49,6 +49,7 @@ class MLP(nn.Module):
         super().__init__()
         self.w = (Bilinear if bilinear else Linear)(d_model, d_hidden, bias=bias, gate=gate)
         self.p = nn.Linear(d_hidden, d_model, bias=bias)
+        # self.p.weight.data.fill_(0) # zero initialization
     
     def forward(self, x: Float[Tensor, "... d_model"]) -> Float[Tensor, "... d_model"]:
         return self.p(self.w(x))

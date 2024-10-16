@@ -94,6 +94,7 @@ class Attention(nn.Module):
         self.rotary = Rotary(config.d_model // config.n_head, config.n_ctx)
         self.qkv = nn.Linear(config.d_model, 3 * config.d_model, bias=False)
         self.o = nn.Linear(config.d_model, config.d_model, bias=False)
+        # self.o.weight.data.fill_(0) # zero initialization
         
         self.softmax = nn.Softmax(dim=-1)
         self.mask = torch.tril(torch.ones(config.n_ctx, config.n_ctx))[None, None, :, :]
@@ -178,7 +179,6 @@ class Transformer(PreTrainedModel):
         }[name]
         
         return AutoTokenizer.from_pretrained(name, pad_token=pad, padding_side="right")
-        # return AutoTokenizer.from_pretrained(name, pad_token=pad)
     
     @classmethod
     def from_pretrained(cls, repo, device='cuda', **kwargs):
