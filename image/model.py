@@ -11,7 +11,7 @@ from pandas import DataFrame
 from einops import *
 
 from shared.components import Linear, Bilinear
-from shared.hub import HubMixin
+from shared.hub import *
 
 def _collator(transform=None):
     def inner(batch):
@@ -33,11 +33,10 @@ class Config:
     d_output: int = 10
     bias: bool = False
     residual: bool = False
-    device: str = "cuda"
     seed: int = 42
 
 
-class Model(nn.Module, HubMixin):
+class Model(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
         torch.manual_seed(config.seed)
@@ -64,6 +63,13 @@ class Model(nn.Module, HubMixin):
     @staticmethod
     def from_config(*args, **kwargs):
         return Model(Config(*args, **kwargs))
+    
+    @staticmethod
+    def from_pretrained(*args, **kwargs):
+        return from_pretrained(Model, *args, **kwargs)
+    
+    def push_to_hub(self, *args, **kwargs):
+        push_to_hub(self, *args, **kwargs)
     
     @property
     def w_e(self):

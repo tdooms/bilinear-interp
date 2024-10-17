@@ -26,3 +26,10 @@ class FMNIST(Dataset):
     
     def __len__(self):
         return self.x.size(0)
+    
+
+def mnist(**kwargs):
+    return MNIST(train=True, **kwargs), MNIST(train=False, **kwargs)
+
+def fmnist(**kwargs):
+    return FMNIST(train=True, **kwargs), FMNIST(train=False, **kwargs)

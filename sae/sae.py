@@ -7,7 +7,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import wandb
 from shared.components import Bilinear
-from shared.hub import HubMixin
+from shared.hub import *
 from language.utils import Sight
 from sae.samplers import ShuffleSampler
 
@@ -115,7 +115,7 @@ class SAEConfig:
         ret = f"{self.point.layer}-{self.point.name}-x{self.expansion}-k{self.k}".replace("_", "-")
         return f"{ret}-{self.tag}" if self.tag else ret
 
-class SAE(nn.Module, HubMixin):
+class SAE(nn.Module):
     """And end-to-end top-k sparse autoencoder"""
     
     def __init__(self, config) -> None:
@@ -181,10 +181,10 @@ class SAE(nn.Module, HubMixin):
     @staticmethod
     def from_pretrained(repo_id, point, expansion, k):
         config = SAEConfig(point=point, expansion=expansion, k=k, d_model=0)
-        return HubMixin.from_pretrained(SAE, repo_id, config.name)
+        return from_pretrained(SAE, repo_id, config.name)
     
     def push_to_hub(self, repo_id):
-        super().push_to_hub(repo_id, self.config.name)
+        push_to_hub(repo_id, self.config.name)
     
     def metrics(self, x, x_hid, x_hat):
         """Computes all interesting metrics for the model"""
