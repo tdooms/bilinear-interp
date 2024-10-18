@@ -10,6 +10,7 @@ from jaxtyping import Float
 import wandb
 from transformers import TrainingArguments, Trainer
 from shared.components import MLP, Norm
+from datasets import load_dataset
 
 
 class Config(PretrainedConfig):
@@ -172,6 +173,10 @@ class Transformer(PreTrainedModel):
     
     @staticmethod
     def get_tokenizer(name):
+        # Very sus but I hate warnings I can do nothing about
+        import os
+        os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
+
         name, pad = {
             "ts-4096": ("tdooms/ts-tokenizer-4096", "[EOS]"),
             "mistral": ("mistral-community/Mixtral-8x22B-v0.1", "</s>"),
@@ -179,6 +184,16 @@ class Transformer(PreTrainedModel):
         }[name]
         
         return AutoTokenizer.from_pretrained(name, pad_token=pad, padding_side="right")
+    
+    def dataset(self, split="train"):
+        name = self.config.dataset
+        
+        if name in ["tinystories", "ts"]:
+            return load_dataset("tdooms/tiny-stories", split=split).with_format("torch")
+        elif name in ["fineweb", "fw"]:
+            return load_dataset("HuggingFaceFW/fineweb-edu", name="sample-10BT", split="train", streaming=True).with_format("torch")
+        else:
+            raise ValueError(f"dataset {name} not found")
     
     @classmethod
     def from_pretrained(cls, repo, device='cuda', **kwargs):

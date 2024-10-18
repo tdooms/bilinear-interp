@@ -179,7 +179,8 @@ class SAE(nn.Module):
         return SAE(SAEConfig(*args, **kwargs))
     
     @staticmethod
-    def from_pretrained(repo_id, point, expansion, k):
+    def from_pretrained(repo_id_or_model, point, expansion, k):
+        repo_id = repo_id_or_model if isinstance(repo_id_or_model, str) else f"{repo_id_or_model.config.repo}-scope"
         config = SAEConfig(point=point, expansion=expansion, k=k, d_model=0)
         return from_pretrained(SAE, repo_id, config.name)
     
