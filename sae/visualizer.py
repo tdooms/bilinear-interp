@@ -90,6 +90,16 @@ class Visualizer:
         
         for line, color, value in zip(tokens, colors, values):
             print(f"{value.max().item():<4.1f}:  {Visualizer.color_line(line, color, value, view)}")
+    
+    def show_logit_influence(self, feature):
+        sims = einsum(self.sae.w_dec.weight[:, feature], self.sight.w_u, "d, b d -> b")
+        pos, neg = sims.topk(k=5), sims.topk(k=5, largest=False)
+        
+        for idx, val in zip(pos.indices, pos.values):
+            print(f"{self.sight.tokenizer.decode(idx)}: {val.item():.2f}", end=', ')
+        
+        for idx, val in zip(neg.indices, neg.values):
+            print(f"{self.sight.tokenizer.decode(idx)}: {val.item():.2f}", end=', ')
         
     def __call__(self, *args, amount=5, **kwargs):
         assert amount <= 100, "Amount must be less than or equal to 100"

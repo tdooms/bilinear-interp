@@ -38,9 +38,9 @@ def compute_kurtosis(data):
     zscores = diffs / std
     return torch.mean(torch.pow(zscores, 4.0), dim=1) - 3.0
 
-# def compute_truncated_eigenvalues(data, k=2):
-#     vals = torch.linalg.eigvalsh(data)
-#     return vals.abs().topk(k=k).values.sum(-1)
+def compute_truncated_eigenvalues(data, k=2):
+    vals = torch.linalg.eigvalsh(data)
+    return vals.abs().topk(k=k).values.sum(-1)
 
 def compute_effective_rank(data):
     vals = torch.linalg.eigvalsh(data)
