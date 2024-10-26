@@ -2,9 +2,8 @@ import torch
 from sae.sae import SAE, Point
 from sae.samplers import MultiSampler
 from einops import *
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 from tqdm import tqdm
-from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 from huggingface_hub import hf_hub_download, HfApi
 from safetensors.torch import save_file
@@ -34,28 +33,29 @@ class Visualizer:
         return dataset
         
     @staticmethod
-    def compute_max_activations(model, dataset=None):
+    def compute_max_activations(model, dataset=None, in_batch=16):
         dataset = Visualizer.create_dataset_subset(model) if dataset is None else dataset
         
-        # TODO: think on how to make this more general
-        points = []
-        saes = []
-
-        for i in range(5, 16, 2):
-            points += [Point("mlp-in", i), Point("mlp-out", i)]
-            
+        # TODO: this should be generalized by looking at all the SAEs in the repo
+        points = [Point(name, layer) for layer in range(model.config.n_layer) for name in ["mlp-in", "mlp-out"]]
         saes = [SAE.from_pretrained(f"{model.config.repo}-scope", point=point, expansion=8, k=30).cuda() for point in points]
-        sampler = MultiSampler(Sight(model), points, dataset=dataset, d_model=model.config.d_model, n_ctx=512)
+        
+        # Hacky wacky
+        points += [Point("resid-mid", 1)]
+        saes += [SAE.from_pretrained(f"{model.config.repo}-scope", point=points[-1], expansion=4, k=30).cuda()]
+        
+        sampler = MultiSampler(Sight(model), points, dataset=dataset, d_model=model.config.d_model, n_ctx=512, in_batch=in_batch)
 
-        total = 2**9
+        total = 2**14 // in_batch
         tops = []
 
         for batch, _ in tqdm(zip(sampler, range(total)), total=total):
-            top = torch.stack([saes[i].encode(batch["activations"][:, i]).max(1).values for i, _ in enumerate(saes)])
+            top = [saes[i].encode(batch["activations"][:, i]).max(1).values for i, _ in enumerate(saes)]
             tops.append(top)
 
-        stacked = torch.cat(tops, dim=1)
-        idxs = stacked.topk(dim=1, k=100).indices
+        transposed = list(zip(*tops))
+        stacked = [torch.cat(t, dim=0) for t in transposed]
+        idxs = [s.topk(dim=0, k=100).indices for s in stacked]
         tensors = {f"{p.layer}-{p.name}": idx for idx, p in zip(idxs, points)}
 
         save_file(tensors, "tmp.safetensors")
@@ -101,15 +101,15 @@ class Visualizer:
         for idx, val in zip(neg.indices, neg.values):
             print(f"{self.sight.tokenizer.decode(idx)}: {val.item():.2f}", end=', ')
         
-    def __call__(self, *args, amount=5, **kwargs):
-        assert amount <= 100, "Amount must be less than or equal to 100"
+    def __call__(self, *args, k=5, **kwargs):
+        assert k <= 100, "Amount must be less than or equal to 100"
         
         # TODO: be somewhat smarter about this
-        args = args if len(args) > 1 else list(args[0])
+        args = [x for arg in args for x in ([arg] if not isinstance(arg, (list, tuple)) else arg)]
         
         for feature in args:
             print(f"feature {feature}")
-            input_ids = self.dataset["input_ids"][self.top_activations[:, feature]][:amount]
+            input_ids = self.dataset["input_ids"][self.top_activations[:, feature]][:k]
             self.color_input_ids(input_ids, feature, **kwargs)
             print()
 

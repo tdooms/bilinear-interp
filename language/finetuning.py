@@ -7,15 +7,15 @@ from language.utils import Sight
 from transformers import TrainerCallback
 from torch import nn
 
-def _regression_metrics(a, b, x):
+def regression_metrics(a, b, x):
     b_pred = einsum(a, x, "... b i, ... i o -> ... b o")
     residuals = b - b_pred
 
-    ss_total = (b - b.mean(-1, keepdim=True)).pow(2).sum()
-    ss_residual = residuals.pow(2).sum()
+    ss_total = (b - b.mean(-1, keepdim=True)).pow(2).sum((-2, -1))
+    ss_residual = residuals.pow(2).sum((-2, -1))
     r_squared = 1 - (ss_residual / ss_total)
     
-    return dict(r_squared=r_squared.item())
+    return dict(r_squared=r_squared)
 
 def exp_decay(x, k=1.05):
     return min(x * np.e ** (k - k * x), 1.0)
@@ -55,7 +55,8 @@ class NormReplacer:
         return torch.stack([*n1_inp, *n2_inp, nf_inp]), torch.stack([*n1_out, *n2_out, nf_out])
     
     def overwrite(self, model, x):
-        for layer, x1, x2 in zip(model.transformer.h, x[0:6], x[6:12]):
+        layers = model.config.n_layer
+        for layer, x1, x2 in zip(model.transformer.h, x[0:layers], x[layers:2*layers]):
             layer.n1 = Interpolator(layer.n1, x1)
             layer.n2 = Interpolator(layer.n2, x2)
 
@@ -79,7 +80,7 @@ def replace_components(model, dataset, which="norm", n_batches=1, compute_metric
     x = torch.linalg.lstsq(a, b).solution
     
     if compute_metrics:
-        print(_regression_metrics(a, b, x))
+        print(regression_metrics(a, b, x))
         
     del a, b
     gc.collect()
@@ -97,7 +98,7 @@ class Interpolator(nn.Module):
         self.alpha = 0.0
         
         if approximation is not None:
-            self.linear.weight = nn.Parameter(approximation.detach())
+            self.linear.weight = nn.Parameter(approximation.T.detach())
     
     def forward(self, x):
         return (1 - self.alpha) * self.original(x) + self.alpha * self.linear(x)

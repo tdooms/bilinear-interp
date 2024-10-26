@@ -185,7 +185,7 @@ class SAE(nn.Module):
         return from_pretrained(SAE, repo_id, config.name)
     
     def push_to_hub(self, repo_id):
-        push_to_hub(repo_id, self.config.name)
+        push_to_hub(self, repo_id, self.config.name)
     
     def metrics(self, x, x_hid, x_hat):
         """Computes all interesting metrics for the model"""
@@ -203,14 +203,6 @@ class SAE(nn.Module):
         
         self.inactive += 1
         return metrics
-    
-    def push_to_hub(self, repo_id, tmp_dir="tmp"):
-        os.makedirs(tmp_dir, exist_ok=True)
-        json.dump(vars(self.config), open(f'{tmp_dir}/config.json', 'w'), indent=2)
-        save_model(self, f'{tmp_dir}/model.safetensors')
-
-        HfApi().upload_folder(folder_path=tmp_dir, path_in_repo=self.config.name, repo_id=repo_id)
-        shutil.rmtree(tmp_dir)
             
     def _reconstruct_step(self, batch):
         """Sample and reconstruct a batch, returning the local loss"""

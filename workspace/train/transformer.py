@@ -17,10 +17,10 @@ model = Transformer.from_config(
     # gate="silu",
 )
 
-model.summary()
+# model.summary()
 # %%
 dataset = load_dataset("tdooms/TinyStories-tokenized-4096", split="train")
-model.fit(dataset, project="stories", num_train_epochs=1, wd=0.1, batch_size=128, gradient_accumulation_steps=2, bf16=True)
+model.fit(dataset, project="stories", num_train_epochs=1, wd=0.1, batch_size=128, gradient_accumulation_steps=1, bf16=True)
 # %%
 model.push_to_hub(f"ts-medium")
 # %%
@@ -30,7 +30,7 @@ model.generate("", max_length=100)
 
 model = Transformer.from_config(
     tokenizer="mistral",
-    n_layer=8,
+    n_layer=12,
     d_model=3*256,
     d_hidden=3*4*256,
     n_head=12,

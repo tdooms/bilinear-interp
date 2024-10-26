@@ -45,10 +45,12 @@ class Linear(nn.Linear):
 
 class MLP(nn.Module):
     """A general MLP implementation supporting bilinear, gated and ReLU activations"""
-    def __init__(self, d_model: int, d_hidden: int, bias=False, bilinear=True, gate=None) -> None:
+    def __init__(self, d_model: int, d_hidden: int, d_out: int = None, bias=False, bilinear=True, gate=None) -> None:
         super().__init__()
+        d_out = d_out or d_model
+        
         self.w = (Bilinear if bilinear else Linear)(d_model, d_hidden, bias=bias, gate=gate)
-        self.p = nn.Linear(d_hidden, d_model, bias=bias)
+        self.p = nn.Linear(d_hidden, d_out, bias=bias)
         # self.p.weight.data.fill_(0) # zero initialization
     
     def forward(self, x: Float[Tensor, "... d_model"]) -> Float[Tensor, "... d_model"]:

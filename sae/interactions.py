@@ -25,8 +25,8 @@ class Interactions:
     
     def q(self, idx: int | slice, project=False):
         """Compute the Q tensor for a given output index and optionally project onto the input latents."""
-        # Computing these einsums can be *very* expensive, installing `opt_einsum` speeds it up.
-        # On my machine, it sped up computation by 500x.
+        # Computing these (honestly trivial) einsums can be *very* expensive.
+        # Installing `opt_einsum` and setting a proper strategy speeds it up (500x on my machine).
         model, layer = self.model, self.layer
         res = torch.einsum("mi,mj,om,...o->...ij", model.w_l[layer], model.w_r[layer], model.w_p[layer], self.out_latents[idx])
 
