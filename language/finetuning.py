@@ -63,17 +63,19 @@ class NormReplacer:
         model.transformer.n_f = Interpolator(model.transformer.n_f, x[-1])
 
 
-def replace_components(model, dataset, which="norm", n_batches=1, compute_metrics=True):
+def replace_components(model, dataset, which="norm", n_batches=2, compute_metrics=True, batch_size=32):
     replacer = dict(norm=NormReplacer, gate=GateReplacer)[which]()
+    config = model.config
+    
     sight = Sight(model)
-    loader = DataLoader(dataset, batch_size=128, shuffle=False)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     
-    a, b = [], []
+    a = torch.tensor(n_batches, config.n_layer * 2 + 1, batch_size, config.n_ctx, config.d_model)
+    b = torch.tensor(n_batches, config.n_layer * 2 + 1, batch_size, config.n_ctx, config.d_model)
     
-    for _, batch in zip(range(n_batches), loader):
+    for i, batch in zip(range(n_batches), loader):
         inp, out = replacer.extract(sight, batch)
-        a.append(inp)
-        b.append(out)
+        a[i], b[i] = inp, out
     
     a = torch.cat(a, dim=1).flatten(1, 2)
     b = torch.cat(b, dim=1).flatten(1, 2)
@@ -95,10 +97,9 @@ class Interpolator(nn.Module):
         self.original = original
         
         self.linear = nn.Linear(*approximation.shape, bias=False)
-        self.alpha = 0.0
+        self.linear.weight = nn.Parameter(approximation.T.detach())
         
-        if approximation is not None:
-            self.linear.weight = nn.Parameter(approximation.T.detach())
+        self.alpha = 0.0
     
     def forward(self, x):
         return (1 - self.alpha) * self.original(x) + self.alpha * self.linear(x)
