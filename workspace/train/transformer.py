@@ -13,7 +13,9 @@ model = Transformer.from_config(
     d_model=2*256,
     d_hidden=2*4*256,
     n_head=8,
-    bias=False,
+    bias=True,
+    norm_bias=True,
+    attention2=True,
     # gate="silu",
 )
 
@@ -22,7 +24,7 @@ model = Transformer.from_config(
 dataset = load_dataset("tdooms/TinyStories-tokenized-4096", split="train")
 model.fit(dataset, project="stories", num_train_epochs=1, wd=0.1, batch_size=128, gradient_accumulation_steps=1, bf16=True)
 # %%
-model.push_to_hub(f"ts-medium")
+model.push_to_hub(f"ts-medium-test")
 # %%
 model.generate("", max_length=100)
 # %%
@@ -39,7 +41,6 @@ model = Transformer.from_config(
 )
 model.summary()
 # %%
-
 train = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-10BT", split="train", streaming=True)
 tokenized = train.map(model.tokenize, batched=True)
 # %%

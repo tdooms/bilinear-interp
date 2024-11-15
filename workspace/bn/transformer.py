@@ -9,7 +9,7 @@ from torch import Tensor
 from jaxtyping import Float
 import wandb
 from transformers import TrainingArguments, Trainer
-from shared.components import MLP, Norm, Norm2
+from shared.components import MLP, RMSNorm
 from datasets import load_dataset
 
 
@@ -24,9 +24,6 @@ class Config(PretrainedConfig):
         bilinear: bool = True,
         gate: str | None = None,
         bias: bool = False,
-        attention2: bool = False,
-        normalization: bool = True,
-        norm_bias: bool = False,
         tokenizer: str = None,
         repo: str = None,
         **kwargs
@@ -40,9 +37,6 @@ class Config(PretrainedConfig):
         self.bilinear = bilinear
         self.gate = gate
         self.bias = bias
-        self.norm_bias = norm_bias
-        self.normalization = normalization
-        self.attention2 = attention2
         
         self.tokenizer = tokenizer
         self.repo = repo
@@ -90,6 +84,46 @@ class Rotary(torch.nn.Module):
         return apply_rotary_pos_emb(q, k, self.cos_cached, self.sin_cached)
 
 
+# class Attention(nn.Module):
+#     def __init__(self, config: Config) -> None:
+#         super().__init__()
+#         self.config = config
+        
+#         self.rotary = Rotary(config.d_model // config.n_head, config.n_ctx)
+#         self.qkv = nn.Linear(config.d_model, 5 * config.d_model, bias=config.bias)
+#         self.o = nn.Linear(config.d_model, config.d_model, bias=False)
+        
+#         self.scores1 = nn.Identity()
+#         self.scores2 = nn.Identity()
+#         self.pattern = nn.Identity()
+
+#         self.mask = torch.tril(torch.ones(config.n_ctx, config.n_ctx))[None, None, :, :]
+    
+#     def forward(self, x: Float[Tensor, "batch seq d_model"], attn_mask=None) -> Float[Tensor, "batch seq d_model"]:
+#         n_head = self.config.n_head
+        
+#         qkv = self.qkv(x)
+#         q1, k1, q2, k2, v = rearrange(qkv, 'batch seq (n n_head d_head) -> n batch n_head seq d_head', n=5, n_head=n_head).unbind(dim=0)
+#         q1, k1 = self.rotary(q1, k1)
+#         q2, k2 = self.rotary(q2, k2)
+        
+#         scores1 = einsum(q1, k1, "batch n_head seq_q d_head, batch n_head seq_k d_head -> batch n_head seq_q seq_k")
+#         scores1 = scores1 / (torch.tensor(q1.size(-1), device=x.device).sqrt())
+#         scores1 = self.scores1(scores1)
+        
+#         scores2 = einsum(q2, k1, "batch n_head seq_q d_head, batch n_head seq_k d_head -> batch n_head seq_q seq_k")
+#         scores2 = scores2 / (torch.tensor(q2.size(-1), device=x.device).sqrt())
+#         scores2 = self.scores2(scores2)
+        
+#         pattern = (scores1 * scores2) / (self.config.n_ctx ** 0.5)
+#         pattern = pattern.masked_fill(self.mask[:,:,:x.size(1),:x.size(1)].to(pattern.device) == 0, 0.0)
+#         pattern = self.pattern(pattern)
+        
+#         z = einsum(pattern, v, "batch n_head seq_q seq_k, batch n_head seq_k d_head -> batch n_head seq_q d_head")
+#         z = rearrange(z, 'batch n_head seq d_head -> batch seq (n_head d_head)')
+        
+#         return self.o(z)
+
 class Attention(nn.Module):
     def __init__(self, config: Config) -> None:
         super().__init__()
@@ -123,61 +157,44 @@ class Attention(nn.Module):
         z = rearrange(z, 'batch n_head seq d_head -> batch seq (n_head d_head)')
         return self.o(z)
 
-class Attention2(nn.Module):
-    def __init__(self, config: Config) -> None:
-        super().__init__()
-        self.config = config
-        
-        self.rotary = Rotary(config.d_model // config.n_head, config.n_ctx)
-        self.qkv = nn.Linear(config.d_model, 5 * config.d_model, bias=config.bias)
-        self.o = nn.Linear(config.d_model, config.d_model, bias=False)
-        
-        self.scores1 = nn.Identity()
-        self.scores2 = nn.Identity()
-        self.pattern = nn.Identity()
-
-        self.mask = torch.tril(torch.ones(config.n_ctx, config.n_ctx))[None, None, :, :]
+# class Norm(nn.Module):
+#     def __init__(self, _):
+#         super().__init__()
     
-    def forward(self, x: Float[Tensor, "batch seq d_model"], attn_mask=None) -> Float[Tensor, "batch seq d_model"]:
-        n_head = self.config.n_head
-        
-        qkv = self.qkv(x)
-        q1, k1, q2, k2, v = rearrange(qkv, 'batch seq (n n_head d_head) -> n batch n_head seq d_head', n=5, n_head=n_head).unbind(dim=0)
-        q1, k1 = self.rotary(q1, k1)
-        q2, k2 = self.rotary(q2, k2)
-        
-        scores1 = einsum(q1, k1, "batch n_head seq_q d_head, batch n_head seq_k d_head -> batch n_head seq_q seq_k")
-        scores1 = scores1 / (torch.tensor(q1.size(-1), device=x.device).sqrt())
-        scores1 = self.scores1(scores1)
-        
-        scores2 = einsum(q2, k2, "batch n_head seq_q d_head, batch n_head seq_k d_head -> batch n_head seq_q seq_k")
-        scores2 = scores2 / (torch.tensor(q2.size(-1), device=x.device).sqrt())
-        scores2 = self.scores2(scores2)
-        
-        pattern = scores1 * scores2
-        pattern = pattern.masked_fill(self.mask[:,:,:x.size(1),:x.size(1)].to(pattern.device) == 0, 0.0)
-        pattern = self.pattern(pattern)
-        
-        z = einsum(pattern, v, "batch n_head seq_q seq_k, batch n_head seq_k d_head -> batch n_head seq_q d_head")
-        z = rearrange(z, 'batch n_head seq d_head -> batch seq (n_head d_head)')
-        
-        return self.o(z)
-   
+#     def forward(self, x):
+#         return x * torch.rsqrt(x.pow(2).mean(dim=(0, 1), keepdim=True) + 1e-6)
+
+class Norm(nn.Module):
+    def __init__(self, d_model):
+        super().__init__()
+        self.register_buffer("avg", torch.ones(1, 1, 1))
+        self.scale = nn.Parameter(torch.ones(d_model))
+        self.momentum = 0.1
+    
+    def forward(self, x, attn_mask=None):
+        if attn_mask is not None:
+            masked = x.masked_fill(~attn_mask[..., None], 0)
+            div = torch.rsqrt(masked.pow(2).sum(dim=(0, 1, 2), keepdim=True) / (attn_mask.sum() * x.size(-1)) + 1e-6)
+            # self.avg = torch.lerp(self.avg, div, self.momentum)
+            self.avg = div
+            return x * div * self.scale
+        else:
+            return x * self.avg * self.scale
 
 class Layer(nn.Module):
     def __init__(self, config: Config) -> None:
         super().__init__()
         self.scale = 1.0 / ((2.0 * config.n_layer) ** 0.5)
         
-        self.attn = Attention2(config) if config.attention2 else Attention(config)
+        self.attn = Attention(config)
         self.mlp = MLP(config.d_model, config.d_hidden, bilinear=config.bilinear, gate=config.gate, bias=config.bias)
         
-        self.n1 = Norm(config.normalization, config.norm_bias)
-        self.n2 = Norm(config.normalization, config.norm_bias)
+        self.n1 = Norm(config.d_model)
+        self.n2 = Norm(config.d_model)
     
     def forward(self, x, attn_mask=None):
-        x = x + self.scale * self.attn(self.n1(x), attn_mask)
-        x = x + self.mlp(self.n2(x))
+        x = self.n1(x + self.scale * self.attn(x, attn_mask), attn_mask)
+        x = self.n2(x + self.mlp(x), attn_mask)
         return x
 
 
@@ -190,7 +207,7 @@ class Transformer(PreTrainedModel):
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(tokenizer.vocab_size, config.d_model),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
-            n_f = Norm(config.normalization, config.norm_bias)
+            n_f = Norm(config.d_model)
         ))
         
         self.lm_head = nn.Linear(config.d_model, tokenizer.vocab_size, bias=False)
@@ -202,7 +219,7 @@ class Transformer(PreTrainedModel):
         for layer in self.transformer.h:
             x = layer(x, attention_mask.bool() if attention_mask is not None else None)
     
-        x = self.transformer.n_f(x)
+        x = self.transformer.n_f(x, attention_mask.bool() if attention_mask is not None else None)
         logits = self.lm_head(x)
         
         if labels is None:

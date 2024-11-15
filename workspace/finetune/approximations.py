@@ -8,7 +8,7 @@ from shared.components import RMSNorm
 import plotly.express as px
 # %%
 torch.set_grad_enabled(False)
-model = Transformer.from_pretrained("tdooms/fw-small")
+model = Transformer.from_pretrained("tdooms/fw-small-test2")
 dataset = load_dataset("tdooms/fineweb-16k", split="train").with_format("torch")
 # %%
 n_batches = 2
@@ -35,6 +35,7 @@ norm = RMSNorm()
 for i, inp in enumerate(acts):
     out = norm(inp)
     x[i] = torch.linalg.lstsq(inp, out).solution
+    
 
 # diags = torch.stack([layer.n2.linear.weight.diag() for layer in model.transformer.h])
 # %%

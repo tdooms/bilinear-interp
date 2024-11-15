@@ -2,7 +2,7 @@
 %load_ext autoreload
 %autoreload 2
 
-from shared import MNIST, FMNIST, Model
+from image import MNIST, FMNIST, Model
 import torch
 from torch import nn
 import plotly.express as px
@@ -17,7 +17,7 @@ pio.templates.default = "plotly_white"
 color = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0.0)
 # %%
 
-mnist = Model.from_config(epochs=100, wd=1.0, n_layer=1, residual=False, seed=420).cuda()
+mnist = Model.from_config(epochs=10, wd=1.0, n_layer=1, residual=False, seed=420).cuda()
 
 transform = nn.Sequential(
     RandomGaussianNoise(mean=0, std=0.5, p=1),

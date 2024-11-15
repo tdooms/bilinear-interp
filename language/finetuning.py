@@ -13,9 +13,7 @@ def regression_metrics(a, b, x):
 
     ss_total = (b - b.mean(-1, keepdim=True)).pow(2).sum((-2, -1))
     ss_residual = residuals.pow(2).sum((-2, -1))
-    r_squared = 1 - (ss_residual / ss_total)
-    
-    return dict(r_squared=r_squared)
+    return 1 - (ss_residual / ss_total)
 
 def exp_decay(x, k=1.05):
     return min(x * np.e ** (k - k * x), 1.0)

@@ -6,7 +6,7 @@ from sae import SAE, Point
 from tqdm import tqdm
 
 
-class Interactions:
+class Tracer:
     """A class to encapsulate the analysis and utils for SAE interactions."""
     def __init__(self, model, layer, out: dict = dict(), inp: dict = dict(), use_encoder=True, device="cuda"):
         self.model = model
@@ -31,15 +31,16 @@ class Interactions:
         res = torch.einsum("mi,mj,om,...o->...ij", model.w_l[layer], model.w_r[layer], model.w_p[layer], self.out_latents[idx])
 
         if project:
-            return torch.einsum("il,ik,...ij->...lk", self.inp_latents, self.inp_latents, res)
+            return torch.einsum("il,jk,...ij->...lk", self.inp_latents, self.inp_latents, res)
         return res
     
     def compute(self, fn, batch_size=32, project=False, *args, **kwargs):
         """Execute certain functions batch-wise on the interactions of the B tensor, useful for getting summary statistics."""
         accum = []
+        
         for start in tqdm(range(0, self.out_latents.size(0), batch_size)):
             matrices = self.q(slice(start, start + batch_size), project=project)
             accum.append(fn(matrices, *args, **kwargs))
             del matrices
             
-        return torch.cat(accum)
+        return accum

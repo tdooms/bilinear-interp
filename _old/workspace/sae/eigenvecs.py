@@ -29,7 +29,7 @@ px.line(vals.cpu(), markers=True)
 # %%
 import torch
 from sae import Interactions
-from sae.interactions import max_truncated_eigenvals
+from sae.tracer import max_truncated_eigenvals
 torch.set_grad_enabled(False)
 
 for layer in range(6):
