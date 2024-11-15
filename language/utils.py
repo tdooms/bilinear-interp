@@ -123,7 +123,7 @@ class Sight(LanguageModel):
             attn_out=self._envoy.transformer.h[layer].attn.output,
             # pattern=self._envoy.transformer.h[layer].attn.softmax.output,
             # scores=self._envoy.transformer.h[layer].attn.softmax.input[0][0],
-            pattern=self._envoy.transformer.h[layer].attn.pattern.output,
-            scores1=self._envoy.transformer.h[layer].attn.scores1.output,
-            scores2=self._envoy.transformer.h[layer].attn.scores2.output,
+            # pattern=self._envoy.transformer.h[layer].attn.pattern.output,
+            # scores1=self._envoy.transformer.h[layer].attn.scores1.output,
+            # scores2=self._envoy.transformer.h[layer].attn.scores2.output,
         )[point]

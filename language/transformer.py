@@ -9,7 +9,7 @@ from torch import Tensor
 from jaxtyping import Float
 import wandb
 from transformers import TrainingArguments, Trainer
-from shared.components import MLP, Norm
+from shared.components import MLP, Norm, Norm2
 from datasets import load_dataset
 
 
@@ -25,7 +25,7 @@ class Config(PretrainedConfig):
         gate: str | None = None,
         bias: bool = False,
         attention2: bool = False,
-        normalization: bool = True,
+        normalization: bool | tuple = True,
         tokenizer: str = None,
         repo: str = None,
         **kwargs
@@ -51,7 +51,18 @@ class Config(PretrainedConfig):
     def d_head(self):
         assert self.d_model % self.n_head == 0, "d_model must be divisible by n_head"
         return self.d_model // self.n_head
-
+    
+    @property
+    def head_normalization(self):
+        return self.normalization[0] if isinstance(self.normalization, tuple) else self.normalization
+    
+    @property
+    def attention_normalization(self):
+        return self.normalization[1] if isinstance(self.normalization, tuple) else self.normalization
+    
+    @property
+    def mlp_normalization(self):
+        return self.normalization[2] if isinstance(self.normalization, tuple) else self.normalization
 
 def rotate_half(x):
     x1, x2 = x.chunk(2, dim=-1)
@@ -171,8 +182,8 @@ class Layer(nn.Module):
         self.attn = Attention2(config) if config.attention2 else Attention(config)
         self.mlp = MLP(config.d_model, config.d_hidden, bilinear=config.bilinear, gate=config.gate, bias=config.bias)
         
-        self.n1 = Norm(config.normalization)
-        self.n2 = Norm(config.normalization)
+        self.n1 = Norm(config.attention_normalization)
+        self.n2 = Norm(config.mlp_normalization)
     
     def forward(self, x, attn_mask=None):
         x = x + self.scale * self.attn(self.n1(x), attn_mask)
@@ -189,11 +200,10 @@ class Transformer(PreTrainedModel):
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(tokenizer.vocab_size, config.d_model),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
-            n_f = Norm(config.normalization)
+            n_f = Norm(config.head_normalization)
         ))
         
         self.lm_head = nn.Linear(config.d_model, tokenizer.vocab_size, bias=False)
-        # self.lm_head = MLP(config.d_model, config.d_hidden, tokenizer.vocab_size)
         self.criterion = nn.CrossEntropyLoss()
         
     def forward(self, input_ids=None, labels=None, attention_mask=None, **kwargs):
@@ -216,10 +226,6 @@ class Transformer(PreTrainedModel):
     
     @staticmethod
     def get_tokenizer(name):
-        # Very sus but I hate warnings I can do nothing about
-        import os
-        os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
-
         name, pad = {
             "ts-4096": ("tdooms/ts-tokenizer-4096", "[EOS]"),
             "mistral": ("mistral-community/Mixtral-8x22B-v0.1", "</s>"),

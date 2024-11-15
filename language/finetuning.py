@@ -44,15 +44,10 @@ class NormReplacer:
     def extract(self, sight, batch):
         with sight.trace(batch["input_ids"], scan=False, validate=False):
             n1_inp = [layer.n1.input.save() for layer in sight.transformer.h]
-            n1_out = [layer.n1.output.save() for layer in sight.transformer.h]
-            
             n2_inp = [layer.n2.input.save() for layer in sight.transformer.h]
-            n2_out = [layer.n2.output.save() for layer in sight.transformer.h]
-            
             nf_inp = sight.transformer.n_f.input.save()
-            nf_out = sight.transformer.n_f.output.save()
     
-        return torch.stack([*n1_inp, *n2_inp, nf_inp]), torch.stack([*n1_out, *n2_out, nf_out])
+        return torch.stack([*n1_inp, *n2_inp, nf_inp])
     
     def overwrite(self, model, x):
         layers = model.config.n_layer

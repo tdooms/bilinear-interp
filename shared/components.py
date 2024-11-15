@@ -75,3 +75,12 @@ class Norm(nn.Module):
         
     def forward(self, x):
         return self.norm(x)
+
+class Norm2(nn.Module):
+    """A multi-function normalization layer with noise and bias options"""
+    def __init__(self, norm):
+        super().__init__()
+        self.linear = nn.Linear(768, 768, bias=False)
+        
+    def forward(self, x):
+        return self.linear(x)
