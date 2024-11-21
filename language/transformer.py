@@ -25,6 +25,7 @@ class Config(PretrainedConfig):
         gate: str | None = None,
         bias: bool = False,
         attention2: bool = False,
+        scale_attn: bool = True,
         normalization: bool = True,
         norm_bias: bool = False,
         tokenizer: str = None,
@@ -43,6 +44,7 @@ class Config(PretrainedConfig):
         self.norm_bias = norm_bias
         self.normalization = normalization
         self.attention2 = attention2
+        self.scale_attn = scale_attn
         
         self.tokenizer = tokenizer
         self.repo = repo
@@ -167,7 +169,7 @@ class Attention2(nn.Module):
 class Layer(nn.Module):
     def __init__(self, config: Config) -> None:
         super().__init__()
-        self.scale = 1.0 / ((2.0 * config.n_layer) ** 0.5)
+        self.scale = 1.0 / ((2.0 * config.n_layer) ** 0.5) if config.scale_attn else 1.0
         
         self.attn = Attention2(config) if config.attention2 else Attention(config)
         self.mlp = MLP(config.d_model, config.d_hidden, bilinear=config.bilinear, gate=config.gate, bias=config.bias)

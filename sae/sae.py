@@ -56,6 +56,7 @@ class SAEConfig:
         decoder_decay: float = 0.0,     # Decoder weight decay factor
         normalize_decoder: bool = True, # Whether to normalize the decoder weights
         encoder_bias: bool = False,     # Whether to use a bias in the encoder
+        passthrough: list = [],         # List of dimensions to skip
         tag: str | None = None,         # Tag for the model
         **kwargs
     ):
@@ -97,6 +98,9 @@ class SAEConfig:
         self.token_lookup = token_lookup
         self.decoder_decay = decoder_decay
         self.normalize_decoder = normalize_decoder
+        
+        # Patch related parameters
+        self.passthrough = passthrough
 
         # Miscellaneous parameters
         self.tag = tag
@@ -128,6 +132,7 @@ class SAE(nn.Module):
         self.d_features = config.d_features
         self.n_ctx = config.n_ctx
         
+        self.passthrough = torch.zeros(config.d_model).scatter_(0, torch.tensor(config.passthrough), 1).bool().cuda()
         self.inactive = torch.zeros(self.d_features)
         
         self.w_dec = nn.Linear(self.d_features, self.d_model, bias=False)
@@ -171,7 +176,7 @@ class SAE(nn.Module):
     def forward(self, x):
         """Chained encoder-decoder operation, returning the hidden state as well"""
         x_hid = self.encode(x)
-        x_hat = self.decode(x_hid)
+        x_hat = self.decode(x_hid) + einsum(self.passthrough, x, "f, ... f -> ... f")
         return x_hat, x_hid
     
     @staticmethod
@@ -179,9 +184,9 @@ class SAE(nn.Module):
         return SAE(SAEConfig(*args, **kwargs))
     
     @staticmethod
-    def from_pretrained(repo_id_or_model, point, expansion, k):
+    def from_pretrained(repo_id_or_model, point, expansion, k, tag=None):
         repo_id = repo_id_or_model if isinstance(repo_id_or_model, str) else f"{repo_id_or_model.config.repo}-scope"
-        config = SAEConfig(point=point, expansion=expansion, k=k, d_model=0)
+        config = SAEConfig(point=point, expansion=expansion, k=k, d_model=0, tag=tag)
         return from_pretrained(SAE, repo_id, config.name)
     
     def push_to_hub(self, repo_id):
@@ -197,7 +202,7 @@ class SAE(nn.Module):
         metrics["mean_inactive"] = self.inactive.mean()
         
         metrics["mse"] = mse
-        metrics["nmse"] = (mse / x.pow(2).mean())
+        metrics["nmse"] = (mse / einsum(x, ~self.passthrough, "... f, f -> ... f").pow(2).mean())
         
         metrics["l1"] = x_hid.sum(-1).mean()
         
