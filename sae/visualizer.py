@@ -73,11 +73,10 @@ class Visualizer:
         idx = values.argmax(dim=-1)
         start, end = max(0, idx + view.start), min(len(line), idx + view.stop)
         return "".join([Visualizer.color_str(line[i], colors[i], values[i]) for i in range(start, end)])
-
+        
     def color_input_ids(self, input_ids, feature=0, view=range(-10, 20), dark=False):
         with torch.no_grad(), self.sight.trace(input_ids, validate=False, scan=False):
             features = self.sae.encode(self.sight[self.sae.point]).save()
-        
         values = features[..., feature]
         tokens = [self.sight.tokenizer.convert_ids_to_tokens(ids) for ids in input_ids]
         

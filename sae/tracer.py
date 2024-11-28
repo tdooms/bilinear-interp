@@ -9,7 +9,7 @@ from tqdm import tqdm
 class Tracer:
     """A class to encapsulate the analysis and utils for SAE interactions."""
     def __init__(self, model, layer, out: dict = dict(), inp: dict = dict(), use_encoder=True, device="cuda"):
-        self.model = model
+        self.w_l, self.w_r, self.w_p = model.w_l[layer], model.w_r[layer], model.w_p[layer]
         self.layer = layer
         
         repo = f"{model.config.repo}-scope"
@@ -27,8 +27,7 @@ class Tracer:
         """Compute the Q tensor for a given output index and optionally project onto the input latents."""
         # Computing these (honestly trivial) einsums can be *very* expensive.
         # Installing `opt_einsum` and setting a proper strategy speeds it up (500x on my machine).
-        model, layer = self.model, self.layer
-        res = torch.einsum("mi,mj,om,...o->...ij", model.w_l[layer], model.w_r[layer], model.w_p[layer], self.out_latents[idx])
+        res = torch.einsum("mi,mj,om,...o->...ij", self.w_l, self.w_r, self.w_p, self.out_latents[idx])
 
         if project:
             return torch.einsum("il,jk,...ij->...lk", self.inp_latents, self.inp_latents, res)

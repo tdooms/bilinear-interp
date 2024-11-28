@@ -164,22 +164,22 @@ class Attention(nn.Module):
 #     def forward(self, x):
 #         return x * torch.rsqrt(x.pow(2).mean(dim=(0, 1), keepdim=True) + 1e-6)
 
-class Norm(nn.Module):
-    def __init__(self, d_model):
-        super().__init__()
-        self.register_buffer("avg", torch.ones(1, 1, 1))
-        self.scale = nn.Parameter(torch.ones(d_model))
-        self.momentum = 0.1
+# class Norm(nn.Module):
+#     def __init__(self, d_model):
+#         super().__init__()
+#         self.register_buffer("avg", torch.ones(1, 1, 1))
+#         self.scale = nn.Parameter(torch.ones(d_model))
+#         self.momentum = 0.1
     
-    def forward(self, x, attn_mask=None):
-        if attn_mask is not None:
-            masked = x.masked_fill(~attn_mask[..., None], 0)
-            div = torch.rsqrt(masked.pow(2).sum(dim=(0, 1, 2), keepdim=True) / (attn_mask.sum() * x.size(-1)) + 1e-6)
-            # self.avg = torch.lerp(self.avg, div, self.momentum)
-            self.avg = div
-            return x * div * self.scale
-        else:
-            return x * self.avg * self.scale
+#     def forward(self, x, attn_mask=None):
+#         if attn_mask is not None:
+#             masked = x.masked_fill(~attn_mask[..., None], 0)
+#             div = torch.rsqrt(masked.pow(2).sum(dim=(0, 1, 2), keepdim=True) / (attn_mask.sum() * x.size(-1)) + 1e-6)
+#             # self.avg = torch.lerp(self.avg, div, self.momentum)
+#             self.avg = div
+#             return x * div * self.scale
+#         else:
+#             return x * self.avg * self.scale
 
 class Layer(nn.Module):
     def __init__(self, config: Config) -> None:
@@ -189,8 +189,8 @@ class Layer(nn.Module):
         self.attn = Attention(config)
         self.mlp = MLP(config.d_model, config.d_hidden, bilinear=config.bilinear, gate=config.gate, bias=config.bias)
         
-        self.n1 = Norm(config.d_model)
-        self.n2 = Norm(config.d_model)
+        self.n1 = RMSNorm(config.d_model)
+        self.n2 = RMSNorm(config.d_model)
     
     def forward(self, x, attn_mask=None):
         x = self.n1(x + self.scale * self.attn(x, attn_mask), attn_mask)
@@ -207,7 +207,7 @@ class Transformer(PreTrainedModel):
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(tokenizer.vocab_size, config.d_model),
             h = nn.ModuleList([Layer(config) for _ in range(config.n_layer)]),
-            n_f = Norm(config.d_model)
+            n_f = RMSNorm(config.d_model)
         ))
         
         self.lm_head = nn.Linear(config.d_model, tokenizer.vocab_size, bias=False)
