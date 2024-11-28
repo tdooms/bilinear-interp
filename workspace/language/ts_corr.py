@@ -16,11 +16,11 @@ import pandas as pd
 torch.set_grad_enabled(False)
 color = dict(color_continuous_scale="RdBu", color_continuous_midpoint=0.0)
 # %%
-name = "fw-medium"
+name = "ts-medium"
 model = Transformer.from_pretrained(f"tdooms/{name}")
-dataset = load_dataset("tdooms/fineweb-16k", split="train").with_format("torch")
+dataset = load_dataset("tdooms/ts-tokenized-4096", split="train").with_format("torch")
 
-layer = 12
+layer = 4
 tracer = Tracer(model, layer=layer, inp=None, out=dict(expansion=4))
 # %%
 def truncated_eigh(tensor, k=64):
@@ -50,7 +50,7 @@ torch.cuda.empty_cache()
 mlp = model.transformer.h[layer].mlp
 ys, y_hats = [], []
 
-for i in tqdm(range(input_ids.size(0))):
+for i in tqdm(range(len(acts))):
     y = tracer.out.encode(mlp(acts[i])).T
 
     pred = einsum(acts[i], vecs, "... f, o f k -> o ... k").pow(2)
@@ -84,33 +84,26 @@ tensor = torch.tensor(list(df[df["nnz"] > 10]["corr"]))
 px.histogram(x=tensor).show()
 tensor.mean().item()
 # %%
-# px.scatter(df, x="nnz", y="corr", log_x=True, opacity=0.2, hover_name=df.index).show()
+# i, k = 7, 2
+
+# vals, vecs = torch.linalg.eigh(tracer.q(i))
+# idxs = vals.abs().topk(k, dim=-1).indices
+
+# mvals = vals[idxs]
+# mvecs = vecs[..., idxs]
+
+# # pred = einsum(acts, acts, tracer.q(i), "... i1, ... i2, i1 i2 -> ...")
+# pred = (einsum(acts, mvecs, "... i, i j -> ... j").pow(2) * mvals[None, None]).sum(-1)
+
+# truth = y[i].to_dense().flatten()
+# masked = pred.flatten().masked_fill(~(truth.bool()), 0.0)
+
+# px.scatter(x=truth.cpu(), y=masked.cpu()).show()
+
+# tmp = torch.stack([truth, masked])
+# torch.corrcoef(tmp)[0, 1].item()
 # %%
-from plotly import express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from itertools import product
-
-titles = []
-for i in range(5, 14):
-    a = y[i].coalesce().values().cpu()
-    b = y_hat[i].T[2].coalesce().values().cpu()
-    tmp = torch.stack([a, b])
-    corr = torch.corrcoef(tmp)[0, 1].item()
-    titles.append(f"{corr:.2f}")
-
-color = px.colors.qualitative.Plotly[0]
-fig = make_subplots(rows=3, cols=3, subplot_titles=titles, vertical_spacing=0.09, x_title="Activation", y_title="Approximation")
-for i, j in product(range(3), range(3)):
-    idx = 5 + i * 3 + j
-    a = y[idx].coalesce().values().cpu()
-    b = y_hat[idx].T[2].coalesce().values().cpu()
-    fig.add_scatter(x=a, y=b, marker=dict(color=color), showlegend=False, mode="markers", row=i + 1, col=j + 1)
-
-fig.update_layout(template="plotly_white")
-fig.update_xaxes(showticklabels=False, range=(0, 20)).update_yaxes(showticklabels=False, range=(0, 20))
-fig.update_layout(width=500, height=400, margin=dict(l=70, r=0, t=30, b=50), showlegend=False)
-fig.write_image(f"C:\\Users\\thoma\\Downloads\\correlation_scatters.pdf", engine="kaleido")
+px.scatter(df, x="nnz", y="corr", log_x=True, opacity=0.2, hover_name=df.index).show()
 # %%
 q = []
 for k in range(1, 64):
@@ -119,16 +112,12 @@ for k in range(1, 64):
         if y[i]._nnz() < 10:
             continue
         
-        x0, x1 = y[i].coalesce().values(), y_hat[i].T[k].coalesce().values()
-        if len(x0) != len(x1):
-            continue
-        
-        tmp = torch.stack([x0, x1])
+        tmp = torch.stack([y[i].coalesce().values(), y_hat[i].T[k].coalesce().values()])
         corrs[i] = torch.corrcoef(tmp)[0, 1].item()
 
     tensor = torch.tensor(list(corrs.values()))
     q += [tensor.mean().item()]
-
+    
 px.line(q)
 # %%
 df.to_csv(f"data/results/{name}-metrics{layer}.csv", index=False)

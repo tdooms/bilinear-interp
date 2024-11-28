@@ -10,6 +10,7 @@ class BaseSampler:
     def __init__(self, dataset, d_model, n_ctx=256, n_batches=1, in_batch=32, extra=[], device="cuda", **kwargs):
         self.extra, self.device = extra, device
         self.n_ctx, self.d_model, self.n_batches, self.in_batch = n_ctx, d_model, n_batches, in_batch
+        self.offset = 1
         
         self.loader = DataLoader(dataset, batch_size=in_batch)
         self.iter = iter(self.loader)

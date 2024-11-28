@@ -4,13 +4,13 @@
 
 import torch
 from language import Sight
-from workspace.bn.transformer import Transformer
+from language.transformer import Transformer
 from einops import *
 import plotly.express as px
 from datasets import load_dataset
 # %%
 torch.set_grad_enabled(False)
-model = Transformer.from_pretrained("tdooms/fw-tiny-v2")
+model = Transformer.from_pretrained("tdooms/fw-small")
 # %%
 # model.generate("", max_length=100, top_k=2)
 model.generate("Generally, a tree is made out of", max_length=100, top_k=2)
@@ -32,13 +32,16 @@ sight = Sight(model)
 # px.imshow(acts[8, 0, :, :128, :128].cpu(), **color, facet_col=0, facet_col_wrap=4, height=800)
 # %%
 with sight.trace(input_ids, validate=False, scan=False):
-    acts = [sight["resid-mid", i].save() for i in range(model.config.n_layer)]
+    acts = [sight["mlp-out", i].save() for i in range(model.config.n_layer)]
 stacked = torch.stack(acts)
 
 # norms = stacked.norm(dim=-1).mean((-2, -1)).cpu()
 
 norms = rearrange(stacked[:, :, 1:], "l b c f -> l (b c) f").norm(dim=1).cpu()
 px.histogram(norms.T, log_y=True, log_x=False, opacity=0.8, barmode="overlay")
+# %%
+norms = stacked[5, 0]
+px.imshow(norms.cpu(), color_continuous_midpoint=0, color_continuous_scale="RdBu")
 # %%
 px.imshow(stacked.max(dim=1).values[2].cpu(), color_continuous_scale="RdBu", color_continuous_midpoint=0, height=800)
 # %%

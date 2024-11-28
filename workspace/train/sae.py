@@ -9,7 +9,8 @@ from einops import *
 import torch
 
 # %%
-model = Transformer.from_pretrained("tdooms/fw-medium").cuda()
+path = "tdooms/fw-small"
+model = Transformer.from_pretrained(path).cuda()
 # %%
 train = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-350BT", split="train", streaming=True).with_format("torch")
 train = train.map(model.tokenize, batched=True)
@@ -25,12 +26,17 @@ for i in range(1, 6):
 for i in range(6):
     sae = SAE.from_config(point=Point("mlp-out", i), d_model=1024, expansion=8, n_buffers=2**14, k=30, n_batches=2**6).cuda()
     sae.fit(model, train, validation, project="sae")
-    sae.push_to_hub("tdooms/fw-medium-scope")
+    sae.push_to_hub(f"{path}-scope")
 # %%
-sae = SAE.from_config(point=Point("resid-mid", 1), d_model=1024, expansion=4, n_buffers=2**14, k=30, n_batches=2**6).cuda()
+for i in range(5):
+    sae = SAE.from_config(point=Point("mlp-out", 12), d_model=1024, expansion=16, n_buffers=2**(13+i), k=30, n_batches=2**6, tag=f"v{i}", passthrough=702).cuda()
+    sae.fit(model, train, validation, project="sae")
+    sae.push_to_hub(f"{path}-scope")
+# %%
+# fw-medium: 702 - fw-small: 157
+sae = SAE.from_config(point=Point("mlp-out", 8), d_model=768, expansion=4, n_buffers=2**16, k=30, n_batches=2**6, passthrough=157).cuda()
 sae.fit(model, train, validation, project="sae")
-sae.push_to_hub("tdooms/fw-medium-scope")
-
+sae.push_to_hub(f"{path}-scope")
 # %%
 from sae import Visualizer
 
