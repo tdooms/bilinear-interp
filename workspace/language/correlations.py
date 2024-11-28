@@ -72,7 +72,7 @@ torch.cuda.empty_cache()
 
 metrics = []
 for i in tqdm(range(tracer.out.d_features)):
-    tmp = torch.stack([y[i].coalesce().values(), y_hat[i].T[2].coalesce().values()])
+    tmp = torch.stack([y[i].coalesce().values(), y_hat[i].T[1].coalesce().values()])
     
     metrics.append(dict(
         corr=torch.corrcoef(tmp)[0, 1].item(),
@@ -104,16 +104,17 @@ fig = make_subplots(rows=3, cols=3, subplot_titles=titles, vertical_spacing=0.09
 for i, j in product(range(3), range(3)):
     idx = 5 + i * 3 + j
     a = y[idx].coalesce().values().cpu()
-    b = y_hat[idx].T[2].coalesce().values().cpu()
+    b = y_hat[idx].T[1].coalesce().values().cpu() + tracer.out.w_enc(tracer.out.b_dec)[idx].cpu()
     fig.add_scatter(x=a, y=b, marker=dict(color=color), showlegend=False, mode="markers", row=i + 1, col=j + 1)
+    fig.add_scatter(x=[0, 20], y=[0, 20], line=dict(color="gray", dash='dot', width=1), showlegend=False, mode="lines", row=i + 1, col=j + 1)
 
 fig.update_layout(template="plotly_white")
-fig.update_xaxes(showticklabels=False, range=(0, 20)).update_yaxes(showticklabels=False, range=(0, 20))
-fig.update_layout(width=500, height=400, margin=dict(l=70, r=0, t=30, b=50), showlegend=False)
+fig.update_xaxes(showticklabels=False, range=(0, 20), showgrid=False).update_yaxes(showticklabels=False, range=(-2, 20), showgrid=False)
+fig.update_layout(width=400, height=400, margin=dict(l=70, r=0, t=30, b=50), showlegend=False)
 fig.write_image(f"C:\\Users\\thoma\\Downloads\\correlation_scatters.pdf", engine="kaleido")
 # %%
 q = []
-for k in range(1, 64):
+for k in range(64):
     corrs = dict()
     for i in tqdm(range(tracer.out.d_features)):
         if y[i]._nnz() < 10:

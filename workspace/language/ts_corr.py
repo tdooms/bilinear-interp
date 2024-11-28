@@ -72,7 +72,7 @@ torch.cuda.empty_cache()
 
 metrics = []
 for i in tqdm(range(tracer.out.d_features)):
-    tmp = torch.stack([y[i].coalesce().values(), y_hat[i].T[2].coalesce().values()])
+    tmp = torch.stack([y[i].coalesce().values(), y_hat[i].T[1].coalesce().values()])
     
     metrics.append(dict(
         corr=torch.corrcoef(tmp)[0, 1].item(),
@@ -106,7 +106,7 @@ tensor.mean().item()
 px.scatter(df, x="nnz", y="corr", log_x=True, opacity=0.2, hover_name=df.index).show()
 # %%
 q = []
-for k in range(1, 64):
+for k in range(64):
     corrs = dict()
     for i in tqdm(range(tracer.out.d_features)):
         if y[i]._nnz() < 10:

@@ -73,7 +73,7 @@ for i in range(5):
 
     metrics = []
     for i in tqdm(range(tracer.out.d_features)):
-        tmp = torch.stack([y[i].coalesce().values(), y_hat[i].T[2].coalesce().values()])
+        tmp = torch.stack([y[i].coalesce().values(), y_hat[i].T[1].coalesce().values()])
         
         metrics.append(dict(
             corr=torch.corrcoef(tmp)[0, 1].item(),
