@@ -27,7 +27,7 @@ class Bilinear(nn.Linear):
 
 class Linear(nn.Linear):
     """A linear layer with optional gate and noise"""
-    def __init__(self, d_in: int, d_out: int, bias=False, gate=None, noise=None) -> None:
+    def __init__(self, d_in: int, d_out: int, bias=False, gate=None) -> None:
         super().__init__(d_in, d_out, bias=bias)
         self.gate = {"relu":nn.ReLU(), "silu":nn.SiLU(), "gelu":nn.GELU(), None: nn.Identity()}[gate]
     
@@ -51,34 +51,20 @@ class MLP(nn.Module):
 
 class RMSNorm(nn.Module):
     """PyTorch doesn't yet have RMSNorm implemented, this is the canonical implementation"""
-    def __init__(self, bias):
+    def __init__(self):
         super().__init__()
-        self.a = nn.Parameter(torch.ones(1)) if bias else None
-        self.b = nn.Parameter(torch.ones(1)) if bias else None
         self.eps = 1e-8
     
     def forward(self, x):
-        if self.a or self.b:
-            return self.a * x * torch.rsqrt(torch.mean(x.pow(2), dim=-1, keepdim=True) + self.b + self.eps)
-        else:
-            return x * torch.rsqrt(torch.mean(x.pow(2), dim=-1, keepdim=True) + self.eps)
+        return x * torch.rsqrt(torch.mean(x.pow(2), dim=-1, keepdim=True) + self.eps)
 
 
 class Norm(nn.Module):
     """A multi-function normalization layer with noise and bias options"""
-    def __init__(self, norm, bias):
+    def __init__(self, norm):
         super().__init__()
 
-        self.norm = RMSNorm(bias) if norm else nn.Identity()
+        self.norm = RMSNorm() if norm else nn.Identity()
         
     def forward(self, x):
         return self.norm(x)
-
-class Norm2(nn.Module):
-    """A multi-function normalization layer with noise and bias options"""
-    def __init__(self, norm):
-        super().__init__()
-        self.linear = nn.Linear(768, 768, bias=False)
-        
-    def forward(self, x):
-        return self.linear(x)

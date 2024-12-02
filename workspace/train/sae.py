@@ -9,7 +9,7 @@ from einops import *
 import torch
 
 # %%
-path = "tdooms/fw-small"
+path = "tdooms/fw-nano"
 model = Transformer.from_pretrained(path).cuda()
 # %%
 train = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-350BT", split="train", streaming=True).with_format("torch")
@@ -17,6 +17,26 @@ train = train.map(model.tokenize, batched=True)
 
 validation = [x["input_ids"] for x in train.take(16)]
 validation = model.collator(validation)
+# %%
+for i in range(1, 4):
+    sae = SAE.from_config(point=Point("attn-out", i), d_model=1024, expansion=8, n_buffers=2**15, k=30, n_batches=2**6).cuda()
+    sae.fit(model, train, validation, project="sae")
+    sae.push_to_hub("tdooms/fw-nano-scope")
+# %%
+for i in range(1, 4):
+    sae = SAE.from_config(point=Point("resid-post", i), d_model=1024, expansion=8, n_buffers=2**15, k=30, n_batches=2**6).cuda()
+    sae.fit(model, train, validation, project="sae")
+    sae.push_to_hub("tdooms/fw-nano-scope")
+# %%
+for i in range(1, 4):
+    sae = SAE.from_config(point=Point("mlp-out", i), d_model=1024, expansion=8, n_buffers=2**15, k=30, n_batches=2**6).cuda()
+    sae.fit(model, train, validation, project="sae")
+    sae.push_to_hub("tdooms/fw-nano-scope")
+# %%
+# for i in range(1, 4):
+#     sae = SAE.from_config(point=Point("mlp-in", i), d_model=1024, expansion=8, n_buffers=2**15, k=30, n_batches=2**6).cuda()
+#     sae.fit(model, train, validation, project="sae")
+#     sae.push_to_hub("tdooms/fw-nano-scope")
 # %%
 for i in range(1, 6):
     sae = SAE.from_config(point=Point("mlp-in", i), d_model=1024, expansion=8, n_buffers=2**14, k=30, n_batches=2**6).cuda()

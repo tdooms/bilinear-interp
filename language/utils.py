@@ -117,7 +117,10 @@ class Sight(LanguageModel):
         return dict(
             resid_pre=self._envoy.transformer.h[layer].input,
             resid_mid=self._envoy.transformer.h[layer].n2.input,
+            
             resid_post=self._envoy.transformer.h[layer].output,
+            resid_out=self._envoy.transformer.h[layer].output,
+            
             mlp_in=self._envoy.transformer.h[layer].n2.output,
             mlp_out=self._envoy.transformer.h[layer].mlp.output,
             attn_out=self._envoy.transformer.h[layer].attn.output,
